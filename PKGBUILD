@@ -21,23 +21,16 @@ depends=(
     'python-pyfiglet'
     'python-py7zr'
 )
-makedepends=('git' 'python-build' 'python-installer' 'python-wheel' 'python-setuptools')
-provides=('animloid')
-conflicts=('animloid')
-source=("git+https://github.com/RetakJunior/AnimLoid.git")
+makedepends=('python-build' 'python-installer' 'python-wheel' 'python-setuptools')
+source=("https://files.pythonhosted.org/packages/source/a/animloid/animloid-$pkgver.tar.gz")
 sha256sums=('SKIP')
 
-pkgver() {
-  cd AnimLoid
-  printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
-}
-
 build() {
-  cd AnimLoid
+  cd "$pkgname-$pkgver"
   python -m build --wheel --no-isolation
 }
 
 package() {
-  cd AnimLoid
+  cd "$pkgname-$pkgver"
   python -m installer --destdir="$pkgdir" dist/*.whl
 }
