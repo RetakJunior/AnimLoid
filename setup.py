@@ -5,7 +5,7 @@ setup(
     version="2.7.0",
     packages=find_packages(include=["weeb_cli", "weeb_cli.*"]),
     package_data={"weeb_cli": ["locales/*.json", "templates/*.html"]},
-    py_modules=["weeb_app_entry"],
+    py_modules=["weeb_app_entry", "gui_main"],
     entry_points={
         "console_scripts": [
             "animloid=weeb_app_entry:main",

@@ -38,6 +38,9 @@ dependencies = [
 where = ["."]
 include = ["weeb_cli*"]
 
+[tool.setuptools]
+py-modules = ["weeb_app_entry", "gui_main"]
+
 [tool.setuptools.package-data]
 weeb_cli = ["locales/*.json", "templates/*.html"]
 
