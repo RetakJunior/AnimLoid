@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="weeb_landing/logo/512x512.webp" alt="AnimLoid Logo" width="120">
-</p>
-
 <h1 align="center">AnimLoid</h1>
 
 <p align="center">
@@ -9,10 +5,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ewgsta/weeb-cli/releases"><img src="https://img.shields.io/github/v/release/ewgsta/weeb-cli?style=flat-square" alt="Release"></a>
-  <a href="https://github.com/ewgsta/weeb-cli/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-CC%20BY--NC--ND%204.0-blue?style=flat-square" alt="License"></a>
-  <a href="https://github.com/ewgsta/weeb-cli/stargazers"><img src="https://img.shields.io/github/stars/ewgsta/weeb-cli?style=flat-square" alt="Stars"></a>
-  <a href="https://github.com/ewgsta/weeb-cli/actions"><img src="https://img.shields.io/github/actions/workflow/status/ewgsta/weeb-cli/tests.yml?style=flat-square" alt="Tests"></a>
+  <a href="https://github.com/RetakJunior/AnimLoid/releases"><img src="https://img.shields.io/github/v/release/RetakJunior/AnimLoid?style=flat-square" alt="Release"></a>
+  <a href="https://github.com/RetakJunior/AnimLoid/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-CC%20BY--NC--ND%204.0-blue?style=flat-square" alt="License"></a>
+  <a href="https://github.com/RetakJunior/AnimLoid/stargazers"><img src="https://img.shields.io/github/stars/RetakJunior/AnimLoid?style=flat-square" alt="Stars"></a>
+  <a href="https://github.com/RetakJunior/AnimLoid/actions"><img src="https://img.shields.io/github/actions/workflow/status/RetakJunior/AnimLoid/tests.yml?style=flat-square" alt="Tests"></a>
 </p>
 
 <p align="center">
@@ -64,21 +60,21 @@
 
 ### PyPI (Evrensel)
 ```bash
-pip install weeb-cli
+pip install animloid
 ```
 
 ### Arch Linux (AUR)
 ```bash
-yay -S weeb-cli
+yay -S animloid
 ```
 
 ### Portable
-[Releases](https://github.com/ewgsta/weeb-cli/releases) sayfasından platformunuza uygun dosyayı indirin.
+[Releases](https://github.com/RetakJunior/AnimLoid/releases) sayfasından platformunuza uygun dosyayı indirin.
 
 ### Geliştirici Kurulumu
 ```bash
-git clone https://github.com/ewgsta/weeb-cli.git
-cd weeb-cli
+git clone https://github.com/RetakJunior/AnimLoid.git
+cd AnimLoid
 pip install -e .
 ```
 
@@ -87,7 +83,7 @@ pip install -e .
 ## Kullanım
 
 ```bash
-weeb-cli
+animloid
 ```
 
 ### Klavye Kontrolleri
@@ -120,13 +116,13 @@ weeb-cli
 
 ## Ayarlar
 
-Yapılandırma: `~/.weeb-cli/weeb.db` (SQLite)
+Yapılandırma: `~/.animloid/animloid.db` (SQLite)
 
 | Ayar | Açıklama | Varsayılan |
 |------|----------|------------|
 | `aria2_enabled` | Aria2 kullanımı | `true` |
 | `max_concurrent_downloads` | Eşzamanlı indirme | `3` |
-| `download_dir` | İndirme klasörü | `./weeb-downloads` |
+| `download_dir` | İndirme klasörü | `./animloid-downloads` |
 | `discord_rpc_enabled` | Discord RPC | `false` |
 | `debug_mode` | Debug loglama | `false` |
 
@@ -179,5 +175,5 @@ Bu proje [CC BY-NC-ND 4.0](LICENSE) lisansı ile lisanslanmıştır.
 
 <p align="center">
   <a href="https://weeb-cli.ewgsta.me">Website</a> •
-  <a href="https://github.com/ewgsta/weeb-cli/issues">Sorun Bildir</a>
+  <a href="https://github.com/RetakJunior/AnimLoid/issues">Sorun Bildir</a>
 </p>
