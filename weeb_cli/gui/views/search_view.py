@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QGraphicsDropShadowEffect, QSizePolicy, QProgressBar
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QSize, QThreadPool
-from PyQt5.QtGui import QPixmap, QColor, QFont, QCursor
+from PyQt5.QtGui import QPixmap, QColor, QFont, QCursor, QImage
 
 from weeb_cli.config import config
 from weeb_cli.services.scraper import scraper
@@ -77,8 +77,9 @@ class AnimeCard(QFrame):
         else:
             self.poster_label.setText("Afiş Yok")
 
-    def _on_image_loaded(self, url, pixmap):
-        if not pixmap.isNull():
+    def _on_image_loaded(self, url, img):
+        if not img.isNull():
+            pixmap = QPixmap.fromImage(img) if isinstance(img, QImage) else img
             self.poster_label.setPixmap(pixmap.scaled(
                 self.poster_label.size(), 
                 Qt.KeepAspectRatioByExpanding, 

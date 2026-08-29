@@ -45,34 +45,24 @@ SUPPORTED_PLAYERS = [
 ]
 
 
-def _init_session():
-    global _session, _base_url
-    
-    if _session is not None:
-        return _session
-    
-    if HAS_CURL_CFFI:
-        _session = curl_requests.Session(impersonate="firefox", allow_redirects=True)
-    else:
-        import requests
-        _session = requests.Session()
-    
-    _base_url = BASE_URL
-    
-    try:
-        res = _session.get(BASE_URL + "/", timeout=30)
-        if res.status_code == 200:
-            final_url = res.url if hasattr(res, 'url') else BASE_URL
-            _base_url = final_url.rstrip('/')
-    except Exception:
-        _base_url = BASE_URL
-    
-    return _session
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+_local = threading.local()
+
+def _get_thread_session():
+    if not hasattr(_local, "session"):
+        if HAS_CURL_CFFI:
+            _local.session = curl_requests.Session(impersonate="chrome120", allow_redirects=True)
+        else:
+            import requests
+            _local.session = requests.Session()
+    return _local.session
 
 
-def _fetch(path: str, headers: Dict[str, str] = None) -> str:
+def _fetch(path: str, headers: Dict[str, str] = None, timeout: int = 10) -> str:
     global _base_url
-    session = _init_session()
+    session = _get_thread_session()
     
     if path is None:
         return ""
@@ -84,7 +74,7 @@ def _fetch(path: str, headers: Dict[str, str] = None) -> str:
     url = _base_url + path
     
     default_headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "X-Requested-With": "XMLHttpRequest",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -93,7 +83,7 @@ def _fetch(path: str, headers: Dict[str, str] = None) -> str:
         default_headers.update(headers)
     
     try:
-        response = session.get(url, headers=default_headers, timeout=30)
+        response = session.get(url, headers=default_headers, timeout=timeout)
         return response.text
     except Exception:
         return ""
@@ -118,21 +108,21 @@ def _obtain_key() -> bytes:
             pass
     
     try:
-        embed_html = _fetch("/embed/#/url/")
+        embed_html = _fetch("/embed/#/url/", timeout=8)
         js_files = re.findall(r"/embed/js/embeds\..*?\.js", embed_html)
         
         if len(js_files) < 2:
             return b""
         
-        js1 = _fetch(js_files[1])
+        js1 = _fetch(js_files[1], timeout=8)
         js1_imports = re.findall("[a-z0-9]{16}", js1)
         
         if not js1_imports:
             return b""
         
-        j2 = _fetch(f'/embed/js/embeds.{js1_imports[0]}.js')
+        j2 = _fetch(f'/embed/js/embeds.{js1_imports[0]}.js', timeout=8)
         if "'decrypt'" not in j2 and len(js1_imports) > 1:
-            j2 = _fetch(f'/embed/js/embeds.{js1_imports[1]}.js')
+            j2 = _fetch(f'/embed/js/embeds.{js1_imports[1]}.js', timeout=8)
         
         match = re.search(
             r'function a\d_0x[\w]{1,4}\(\)\{var _0x\w{3,8}=\[(.*?)\];', j2
@@ -140,9 +130,9 @@ def _obtain_key() -> bytes:
         if not match:
             return b""
         
-        obfuscate_list = match.group(1)
+        obfuscate_list = match.group(1).split("','")
         _key_cache = max(
-            obfuscate_list.split("','"),
+            obfuscate_list,
             key=lambda i: len(re.sub(r"\\x\d\d", "?", i))
         ).encode()
         
@@ -192,23 +182,14 @@ def _decrypt_cipher(key: bytes, data: bytes) -> str:
 
 
 def _get_real_url(url_cipher: str) -> str:
-    if HAS_APPDIRS:
-        try:
-            cache_file = os.path.join(user_cache_dir(), "turkanimu_key.cache")
-            if os.path.isfile(cache_file):
-                with open(cache_file, "r", encoding="utf-8") as f:
-                    cached_key = f.read().strip().encode()
-                    plaintext = _decrypt_cipher(cached_key, url_cipher.encode())
-                    if plaintext:
-                        return "https:" + json.loads(plaintext)
-        except Exception:
-            pass
+    global _key_cache
+    if not _key_cache:
+        _key_cache = _obtain_key()
     
-    key = _obtain_key()
-    if not key:
+    if not _key_cache:
         return ""
     
-    plaintext = _decrypt_cipher(key, url_cipher.encode())
+    plaintext = _decrypt_cipher(_key_cache, url_cipher.encode())
     if not plaintext:
         return ""
     
@@ -422,15 +403,15 @@ class TurkAnimeProvider(BaseProvider):
         return episodes
     
     def get_streams(self, anime_id: str, episode_id: str) -> List[StreamLink]:
-        html = _fetch(f'/video/{episode_id}')
+        html = _fetch(f'/video/{episode_id}', timeout=10)
         if not html:
             return []
         
-        streams = []
+        tasks = []
         
-        if not re.search(r".*birden fazla grup", html):
-            fansub_match = re.findall(r"</span> ([^\\<>]*)</button>.*?iframe", html)
-            fansub = fansub_match[0] if fansub_match else "Unknown"
+        if "birden fazla grup" not in html:
+            group_m = re.findall(r'class="fa fa-heart fa-fw"></span>\s*([^<]+)', html)
+            fansub = group_m[0].strip() if group_m else "Varsayılan"
             
             video_matches = re.findall(
                 r'/embed/#/url/(.*?)\?status=0".*?</span> ([^ ]*?) ?</button>',
@@ -442,37 +423,49 @@ class TurkAnimeProvider(BaseProvider):
             )
             
             for cipher_or_path, player in video_matches:
-                stream = self._process_video(cipher_or_path, player, fansub)
-                if stream:
-                    streams.append(stream)
+                cp = re.sub(r'<[^>]+>', '', player).strip().upper()
+                if cp in SUPPORTED_PLAYERS:
+                    tasks.append((cipher_or_path, cp, fansub))
         else:
-            fansub_matches = re.findall(r"(ajax/videosec&.*?)'.*?</span> ?(.*?)</a>", html)
+            fansub_matches = re.findall(r"(ajax/videosec&.*?)\'.*?</span> ?(.*?)</a>", html)
             
-            for path, fansub in fansub_matches:
-                src = _fetch(path)
+            for path, raw_fansub in fansub_matches:
+                src = _fetch(path, timeout=6)
+                if not src:
+                    continue
                 
-                video_matches = re.findall(
-                    r'/embed/#/url/(.*?)\?status=0".*?</span> ([^ ]*?) ?</button>',
-                    src
-                )
-                video_matches += re.findall(
-                    r'(ajax/videosec&b=[A-Za-z0-9]+&v=.*?)\'.*?</span> ?(.*?)</button',
-                    src
-                )
+                group_m = re.findall(r'class="fa fa-heart fa-fw"></span>\s*([^<]+)', src)
+                uploader_m = re.findall(r'title="Uploader">([^<]+)', src)
+                clean_f = group_m[0].strip() if group_m else (uploader_m[0].strip() if uploader_m else "Varsayılan")
                 
-                for cipher_or_path, player in video_matches:
-                    stream = self._process_video(cipher_or_path, player, fansub)
-                    if stream:
-                        streams.append(stream)
+                vm = re.findall(r'/embed/#/url/(.*?)\?status=0".*?</span> ([^ ]*?) ?</button>', src)
+                vm += re.findall(r'(ajax/videosec&b=[A-Za-z0-9]+&v=.*?)\'.*?</span> ?(.*?)</button', src)
+                for c, p in vm:
+                    cp = re.sub(r'<[^>]+>', '', p).strip().upper()
+                    if cp in SUPPORTED_PLAYERS:
+                        tasks.append((c, cp, clean_f))
+        
+        streams = []
+        if tasks:
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                futures = [executor.submit(self._process_video, c, p, f) for c, p, f in tasks]
+                for future in as_completed(futures):
+                    try:
+                        s = future.result()
+                        if s:
+                            streams.append(s)
+                    except Exception:
+                        pass
         
         return streams
     
     def _process_video(self, cipher_or_path: str, player: str, fansub: str) -> Optional[StreamLink]:
-        if player.upper() not in SUPPORTED_PLAYERS:
+        player_clean = player.strip().upper()
+        if player_clean not in SUPPORTED_PLAYERS:
             return None
         
-        if "/" in cipher_or_path:
-            src = _fetch(cipher_or_path)
+        if cipher_or_path.startswith("ajax/"):
+            src = _fetch(cipher_or_path, timeout=6)
             cipher_match = re.findall(r'/embed/#/url/(.*?)\?status', src)
             if not cipher_match:
                 return None
@@ -491,10 +484,14 @@ class TurkAnimeProvider(BaseProvider):
             if "turkanime" in url:
                 return None
         
+        clean_fansub = re.sub(r'<[^>]+>', '', fansub).strip()
+        if len(clean_fansub) > 30:
+            clean_fansub = clean_fansub.split()[-1]
+        
         return StreamLink(
             url=url,
             quality="auto",
-            server=f"{fansub} - {player}"
+            server=f"{clean_fansub} - {player_clean}"
         )
     
     def _parse_episode_number(self, title: str, fallback: int) -> int:

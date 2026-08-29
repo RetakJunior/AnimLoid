@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QDialog, QComboBox, QMessageBox, QProgressBar
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QThreadPool, QSize
-from PyQt5.QtGui import QPixmap, QCursor, QFont
+from PyQt5.QtGui import QPixmap, QCursor, QFont, QImage
 
 from weeb_cli.config import config
 from weeb_cli.services.progress import progress_tracker
@@ -271,8 +271,9 @@ class DetailView(QWidget):
         self.details_worker.error_occurred.connect(self._on_details_error)
         self.details_worker.start()
 
-    def _on_image_loaded(self, url, pixmap):
-        if not pixmap.isNull():
+    def _on_image_loaded(self, url, img):
+        if not img.isNull():
+            pixmap = QPixmap.fromImage(img) if isinstance(img, QImage) else img
             self.poster_label.setPixmap(pixmap.scaled(
                 self.poster_label.size(), 
                 Qt.KeepAspectRatioByExpanding, 

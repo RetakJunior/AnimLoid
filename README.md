@@ -139,6 +139,5 @@ Bu proje [CC BY-NC-ND 4.0](LICENSE) lisansı ile lisanslanmıştır.
 ---
 
 <p align="center">
-  <a href="https://weeb-cli.ewgsta.me">Website</a> •
   <a href="https://github.com/RetakJunior/AnimLoid/issues">Sorun Bildir</a>
 </p>

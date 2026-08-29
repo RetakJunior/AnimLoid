@@ -18,8 +18,8 @@ _IMAGE_CACHE: dict = {}
 
 
 class ImageLoaderWorker(QThread):
-    """Load a remote image in a QThread (avoids QSocketNotifier cross-thread warning)."""
-    image_loaded = pyqtSignal(str, QPixmap)
+    """Load a remote image in a QThread safely using QImage."""
+    image_loaded = pyqtSignal(str, QImage)
     image_failed = pyqtSignal(str)
 
     def __init__(self, url: str, target_size=None, parent=None):
@@ -33,14 +33,16 @@ class ImageLoaderWorker(QThread):
             return
 
         if self.url in _IMAGE_CACHE:
-            self.image_loaded.emit(self.url, _IMAGE_CACHE[self.url])
-            return
+            cached_img = _IMAGE_CACHE[self.url]
+            if not cached_img.isNull():
+                self.image_loaded.emit(self.url, cached_img)
+                return
 
         content = None
         # 1) Try curl_cffi
         try:
             from curl_cffi import requests as cr
-            resp = cr.get(self.url, impersonate="chrome120", timeout=10)
+            resp = cr.get(self.url, impersonate="chrome120", timeout=8)
             if resp.status_code == 200:
                 content = resp.content
         except Exception:
@@ -53,7 +55,7 @@ class ImageLoaderWorker(QThread):
                     self.url,
                     headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"}
                 )
-                with urllib.request.urlopen(req, timeout=10) as r:
+                with urllib.request.urlopen(req, timeout=8) as r:
                     content = r.read()
             except Exception:
                 pass
@@ -61,9 +63,8 @@ class ImageLoaderWorker(QThread):
         if content:
             image = QImage()
             if image.loadFromData(content):
-                pixmap = QPixmap.fromImage(image)
-                _IMAGE_CACHE[self.url] = pixmap
-                self.image_loaded.emit(self.url, pixmap)
+                _IMAGE_CACHE[self.url] = image
+                self.image_loaded.emit(self.url, image)
                 return
 
         self.image_failed.emit(self.url)
