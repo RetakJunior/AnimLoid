@@ -24,16 +24,19 @@
 ## Özellikler
 
 ### Çoklu Kaynak Desteği
+
 - **Türkçe**: Animecix, Turkanime, Anizle
 - **İngilizce**: HiAnime, AllAnime
 
 ### Akıllı İzleme
+
 - MPV entegrasyonu ile yüksek kaliteli HLS/MP4 yayınları
 - Kaldığınız yerden devam etme (dakika bazında)
 - İzleme geçmişi ve istatistikler
 - Tamamlanan (✓) ve devam eden (●) bölüm işaretleri
 
 ### Güçlü İndirme Sistemi
+
 - **Aria2** ile çoklu bağlantılı hızlı indirme
 - **yt-dlp** ile karmaşık yayın desteği
 - Kuyruk sistemi ve eşzamanlı indirme
@@ -41,12 +44,14 @@
 - Akıllı dosya isimlendirme (`Anime Adı - S1B1.mp4`)
 
 ### Yerel Kütüphane
+
 - İndirilen animeleri otomatik tarama
 - Harici disk desteği (USB, HDD)
 - Çevrimdışı anime indexleme
 - Tüm kaynaklarda arama
 
 ### Ek Özellikler
+
 - SQLite veritabanı (hızlı ve güvenilir)
 - İndirme tamamlandığında sistem bildirimi
 - Discord RPC entegrasyonu (izlediğiniz anime Discord'da görünsün)
@@ -59,19 +64,17 @@
 ## Kurulum
 
 ### PyPI (Evrensel)
+
 ```bash
 pip install animloid
 ```
 
-### Arch Linux (AUR)
-```bash
-yay -S animloid
-```
-
 ### Portable
+
 [Releases](https://github.com/RetakJunior/AnimLoid/releases) sayfasından platformunuza uygun dosyayı indirin.
 
 ### Geliştirici Kurulumu
+
 ```bash
 git clone https://github.com/RetakJunior/AnimLoid.git
 cd AnimLoid
@@ -87,16 +90,17 @@ animloid
 ```
 
 ### Klavye Kontrolleri
-| Tuş | İşlev |
-|-----|-------|
-| `↑` `↓` | Menüde gezinme |
-| `Enter` | Seçim yapma |
-| `s` | Anime Ara (Ana menüde) |
-| `d` | İndirmeler (Ana menüde) |
-| `w` | İzlediklerim (Ana menüde) |
-| `c` | Ayarlar (Ana menüde) |
-| `q` | Çıkış (Ana menüde) |
-| `Ctrl+C` | Geri dön / Çıkış |
+
+| Tuş      | İşlev                     |
+| -------- | ------------------------- |
+| `↑` `↓`  | Menüde gezinme            |
+| `Enter`  | Seçim yapma               |
+| `s`      | Anime Ara (Ana menüde)    |
+| `d`      | İndirmeler (Ana menüde)   |
+| `w`      | İzlediklerim (Ana menüde) |
+| `c`      | Ayarlar (Ana menüde)      |
+| `q`      | Çıkış (Ana menüde)        |
+| `Ctrl+C` | Geri dön / Çıkış          |
 
 **Not:** Tüm kısayollar Ayarlar > Klavye Kısayolları menüsünden özelleştirilebilir.
 
@@ -104,13 +108,13 @@ animloid
 
 ## Kaynaklar
 
-| Kaynak | Dil |
-|--------|-----|
-| Animecix | Türkçe |
-| Turkanime | Türkçe |
-| Anizle | Türkçe |
-| HiAnime | İngilizce |
-| AllAnime | İngilizce |
+| Kaynak    | Dil       |
+| --------- | --------- |
+| Animecix  | Türkçe    |
+| Turkanime | Türkçe    |
+| Anizle    | Türkçe    |
+| HiAnime   | İngilizce |
+| AllAnime  | İngilizce |
 
 ---
 
@@ -118,52 +122,13 @@ animloid
 
 Yapılandırma: `~/.animloid/animloid.db` (SQLite)
 
-| Ayar | Açıklama | Varsayılan |
-|------|----------|------------|
-| `aria2_enabled` | Aria2 kullanımı | `true` |
-| `max_concurrent_downloads` | Eşzamanlı indirme | `3` |
-| `download_dir` | İndirme klasörü | `./animloid-downloads` |
-| `discord_rpc_enabled` | Discord RPC | `false` |
-| `debug_mode` | Debug loglama | `false` |
-
----
-
-## Yol Haritası
-
-### Tamamlanan
-- [x] Çoklu kaynak desteği (TR/EN)
-- [x] MPV ile izleme
-- [x] İzleme geçmişi ve ilerleme takibi
-- [x] Aria2/yt-dlp indirme entegrasyonu
-- [x] Harici disk ve yerel kütüphane
-- [x] SQLite veritabanı
-- [x] Bildirim sistemi
-- [x] Debug modu
-- [x] MAL/AniList entegrasyonu
-- [x] Veritabanı yedekleme/geri yükleme
-- [x] Klavye kısayolları
-
-## Gelecek Planlar
-
-### v2.6.0 (Planlanan)
-- [ ] Async/await refactoring
-- [ ] Download strategy pattern
-- [ ] Token şifreleme
-- [ ] Progress bar iyileştirmesi
-- [ ] Plugin sistemi
-
-### v2.7.0 (Planlanan)
-- [ ] Anime önerileri
-- [ ] Toplu işlemler
-- [ ] İzleme istatistikleri (grafik)
-- [ ] Tema desteği
-- [ ] Altyazı indirme
-
-### v3.0.0 (Uzun Vadeli)
-- [ ] Web UI (opsiyonel)
-- [ ] Torrent desteği
-- [ ] Watch party
-- [ ] Mobile app entegrasyonu
+| Ayar                       | Açıklama          | Varsayılan             |
+| -------------------------- | ----------------- | ---------------------- |
+| `aria2_enabled`            | Aria2 kullanımı   | `true`                 |
+| `max_concurrent_downloads` | Eşzamanlı indirme | `3`                    |
+| `download_dir`             | İndirme klasörü   | `./animloid-downloads` |
+| `discord_rpc_enabled`      | Discord RPC       | `false`                |
+| `debug_mode`               | Debug loglama     | `false`                |
 
 ---
 

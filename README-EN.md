@@ -24,16 +24,19 @@
 ## Features
 
 ### Multiple Sources
+
 - **Turkish**: Animecix, Turkanime, Anizle
 - **English**: HiAnime, AllAnime
 
 ### Smart Streaming
+
 - High-quality HLS/MP4 playback with MPV
 - Resume from where you left off (timestamp-based)
 - Watch history and statistics
 - Completed (✓) and in-progress (●) episode markers
 
 ### Powerful Download System
+
 - **Aria2** for multi-connection fast downloads
 - **yt-dlp** for complex stream support
 - Queue system with concurrent downloads
@@ -41,12 +44,14 @@
 - Smart file naming (`Anime Name - S1E1.mp4`)
 
 ### Local Library
+
 - Auto-scan downloaded anime
 - External drive support (USB, HDD)
 - Offline anime indexing
 - Search across all sources
 
 ### Additional Features
+
 - SQLite database (fast and reliable)
 - System notifications on download completion
 - Discord RPC integration (show what you're watching on Discord)
@@ -59,19 +64,17 @@
 ## Installation
 
 ### PyPI (Universal)
+
 ```bash
 pip install animloid
 ```
 
-### Arch Linux (AUR)
-```bash
-yay -S animloid
-```
-
 ### Portable
+
 Download the appropriate file for your platform from [Releases](https://github.com/RetakJunior/AnimLoid/releases).
 
 ### Developer Setup
+
 ```bash
 git clone https://github.com/RetakJunior/AnimLoid.git
 cd AnimLoid
@@ -87,16 +90,17 @@ animloid
 ```
 
 ### Keyboard Controls
-| Key | Action |
-|-----|--------|
-| `↑` `↓` | Navigate menu |
-| `Enter` | Select |
-| `s` | Search Anime (Main menu) |
-| `d` | Downloads (Main menu) |
-| `w` | Watchlist (Main menu) |
-| `c` | Settings (Main menu) |
-| `q` | Exit (Main menu) |
-| `Ctrl+C` | Go back / Exit |
+
+| Key      | Action                   |
+| -------- | ------------------------ |
+| `↑` `↓`  | Navigate menu            |
+| `Enter`  | Select                   |
+| `s`      | Search Anime (Main menu) |
+| `d`      | Downloads (Main menu)    |
+| `w`      | Watchlist (Main menu)    |
+| `c`      | Settings (Main menu)     |
+| `q`      | Exit (Main menu)         |
+| `Ctrl+C` | Go back / Exit           |
 
 **Note:** All shortcuts can be customized in Settings > Keyboard Shortcuts.
 
@@ -104,13 +108,13 @@ animloid
 
 ## Sources
 
-| Source | Language |
-|--------|----------|
-| Animecix | Turkish |
-| Turkanime | Turkish |
-| Anizle | Turkish |
-| HiAnime | English |
-| AllAnime | English |
+| Source    | Language |
+| --------- | -------- |
+| Animecix  | Turkish  |
+| Turkanime | Turkish  |
+| Anizle    | Turkish  |
+| HiAnime   | English  |
+| AllAnime  | English  |
 
 ---
 
@@ -118,40 +122,13 @@ animloid
 
 Config location: `~/.animloid/animloid.db` (SQLite)
 
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `aria2_enabled` | Use Aria2 | `true` |
-| `max_concurrent_downloads` | Concurrent downloads | `3` |
-| `download_dir` | Download folder | `./animloid-downloads` |
-| `discord_rpc_enabled` | Discord RPC | `false` |
-| `debug_mode` | Debug logging | `false` |
-
----
-
-## Roadmap
-
-### Completed
-- [x] Multiple source support (TR/EN)
-- [x] MPV streaming
-- [x] Watch history and progress tracking
-- [x] Aria2/yt-dlp download integration
-- [x] External drives and local library
-- [x] SQLite database
-- [x] Notification system
-- [x] Debug mode
-- [x] MAL/AniList integration
-- [x] Database backup/restore
-- [x] Keyboard shortcuts
-
-
-### Planned
-- [ ] Anime recommendations
-- [ ] Batch operations
-- [ ] Watch statistics (graphs)
-- [ ] Theme support
-- [ ] Subtitle downloads
-- [ ] Torrent support (nyaa.si)
-- [ ] Watch party
+| Setting                    | Description          | Default                |
+| -------------------------- | -------------------- | ---------------------- |
+| `aria2_enabled`            | Use Aria2            | `true`                 |
+| `max_concurrent_downloads` | Concurrent downloads | `3`                    |
+| `download_dir`             | Download folder      | `./animloid-downloads` |
+| `discord_rpc_enabled`      | Discord RPC          | `false`                |
+| `debug_mode`               | Debug logging        | `false`                |
 
 ---
 
@@ -162,6 +139,5 @@ This project is licensed under [CC BY-NC-ND 4.0](LICENSE).
 ---
 
 <p align="center">
-  <a href="https://weeb-cli.ewgsta.me">Website</a> •
   <a href="https://github.com/RetakJunior/AnimLoid/issues">Report Issue</a>
 </p>
