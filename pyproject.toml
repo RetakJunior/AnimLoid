@@ -3,18 +3,18 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "weeb-cli"
+name = "animloid"
 version = "2.7.0"
 description = "Tarayıcı yok, reklam yok, dikkat dağıtıcı unsur yok. Sadece siz ve eşsiz bir anime izleme deneyimi."
 readme = "README.md"
-authors = [{ name = "ewgsta", email = "ewgst@proton.me" }]
+authors = [{ name = "RetakJunior", email = "retakjunior@users.noreply.github.com" }]
 license = "CC-BY-NC-ND-4.0"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
     "Environment :: Console",
 ]
-keywords = ["anime", "weeb", "anime-download", "anizm", "anime-watch", "anime-watching", "anime-downloading", "anime-cli", "allanime", "animecix", "anime-indir", "anime-izle", "weeb-cli", "anime-izleme", "anime-indirme", "weebanime", "tranime"]
+keywords = ["anime", "animloid", "anime-download", "anime-watch", "anime-watching", "anime-downloading", "anime-cli", "allanime", "animecix", "anime-indir", "anime-izle", "anime-izleme", "anime-indirme", "tranime"]
 requires-python = ">=3.8"
 dependencies = [
     "typer[all]",
@@ -28,8 +28,6 @@ dependencies = [
     "curl_cffi",
     "appdirs",
     "prompt_toolkit>=3.0.36,<3.0.50",
-    "build",
-    "pyinstaller",
     "pyfiglet",
     "py7zr",
     "pypresence",
@@ -44,9 +42,9 @@ include = ["weeb_cli*"]
 weeb_cli = ["locales/*.json", "templates/*.html"]
 
 [project.urls]
-Homepage = "https://weeb-cli.ewgsta.me"
-Repository = "https://github.com/ewgsta/weeb-cli"
-Issues = "https://github.com/ewgsta/weeb-cli/issues"
+Homepage = "https://github.com/RetakJunior/AnimLoid"
+Repository = "https://github.com/RetakJunior/AnimLoid"
+Issues = "https://github.com/RetakJunior/AnimLoid/issues"
 
 [project.scripts]
-weeb-cli = "weeb_cli.main:app"
+animloid = "weeb_app_entry:main"
