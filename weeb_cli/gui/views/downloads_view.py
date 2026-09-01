@@ -145,7 +145,7 @@ class DownloadsView(QWidget):
                 status_item.setForeground(QColor("#10B981"))
             elif status == "processing":
                 status_item.setText("İndiriliyor ⬇")
-                status_item.setForeground(QColor("#7C5CFF"))
+                status_item.setForeground(QColor("#60A5FA"))
             elif status == "failed":
                 status_item.setText("Hata ✕")
                 status_item.setForeground(QColor("#EF4444"))
@@ -189,4 +189,3 @@ class DownloadsView(QWidget):
             with db._conn() as conn:
                 conn.execute("DELETE FROM download_queue WHERE episode_id = ?", (episode_id,))
         self.refresh_queue()
-

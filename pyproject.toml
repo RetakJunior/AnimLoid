@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "animloid"
-version = "2.7.0"
+version = "2.7.1"
 description = "Tarayıcı yok, reklam yok, dikkat dağıtıcı unsur yok. Sadece siz ve eşsiz bir anime izleme deneyimi."
 readme = "README.md"
 authors = [{ name = "RetakJunior", email = "retakjunior@users.noreply.github.com" }]
@@ -31,6 +31,7 @@ dependencies = [
     "pyfiglet",
     "py7zr",
     "pypresence",
+    "PyQt5>=5.15.0",
     "winotify; sys_platform == 'win32'"
 ]
 

@@ -3,6 +3,12 @@
 import os
 import sys
 from pathlib import Path
+
+# This module can also be launched directly with ``python -m``.  Configure
+# the Qt platform before importing any PyQt module; an explicit environment
+# value is always left untouched.
+os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
     QStackedWidget, QPushButton, QLabel, QFrame, QStatusBar, QButtonGroup
@@ -22,8 +28,8 @@ class AnimLoidApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("AnimLoid - Anime İzle & İndir")
-        self.resize(1100, 720)
-        self.setMinimumSize(950, 600)
+        self.resize(1080, 700)
+        self.setMinimumSize(900, 560)
 
         # Set App Icon
         self._load_app_icon()
@@ -61,16 +67,18 @@ class AnimLoidApp(QMainWindow):
         self.sidebar = QFrame()
         self.sidebar.setObjectName("Sidebar")
         sidebar_layout = QVBoxLayout(self.sidebar)
-        sidebar_layout.setContentsMargins(14, 20, 14, 20)
-        sidebar_layout.setSpacing(8)
+        sidebar_layout.setContentsMargins(12, 16, 12, 16)
+        sidebar_layout.setSpacing(6)
 
         # Brand / Logo Header
         brand_layout = QHBoxLayout()
         brand_layout.setContentsMargins(4, 0, 4, 16)
         brand_layout.setSpacing(10)
 
-        logo_label = QLabel("✨")
-        logo_label.setStyleSheet("font-size: 24px;")
+        logo_label = QLabel("A")
+        logo_label.setAlignment(Qt.AlignCenter)
+        logo_label.setFixedSize(28, 28)
+        logo_label.setStyleSheet("background: #2563eb; color: white; border-radius: 6px; font-size: 15px; font-weight: bold;")
         brand_layout.addWidget(logo_label)
 
         title_box = QVBoxLayout()
@@ -80,7 +88,7 @@ class AnimLoidApp(QMainWindow):
         app_title.setObjectName("LogoTitle")
         title_box.addWidget(app_title)
 
-        app_sub = QLabel("v2.7.0 • Anime Hub")
+        app_sub = QLabel("v2.7.1 • Anime izle ve indir")
         app_sub.setObjectName("LogoSubtitle")
         title_box.addWidget(app_sub)
 
@@ -107,8 +115,8 @@ class AnimLoidApp(QMainWindow):
         info_card = QFrame()
         info_card.setStyleSheet("""
             QFrame {
-                background-color: #1A1D2B;
-                border: 1px solid #282E44;
+                background-color: #17191d;
+                border: 1px solid #303238;
                 border-radius: 8px;
                 padding: 10px;
             }

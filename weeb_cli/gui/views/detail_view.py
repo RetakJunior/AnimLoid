@@ -7,12 +7,15 @@ from PyQt5.QtWidgets import (
     QDialog, QComboBox, QMessageBox, QProgressBar
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QThreadPool, QSize
-from PyQt5.QtGui import QPixmap, QCursor, QFont, QImage
+from PyQt5.QtGui import QPixmap, QCursor, QFont
 
 from weeb_cli.config import config
 from weeb_cli.services.progress import progress_tracker
 from weeb_cli.services.downloader import queue_manager
-from weeb_cli.gui.workers import DetailsWorker, StreamsWorker, PlayWorker, ImageLoaderWorker
+from weeb_cli.gui.workers import (
+    DetailsWorker, StreamsWorker, PlayWorker, ImageLoaderWorker,
+    start_background_worker,
+)
 
 
 class ServerSelectDialog(QDialog):
@@ -22,8 +25,8 @@ class ServerSelectDialog(QDialog):
         self.setFixedSize(380, 200)
         self.setStyleSheet("""
             QDialog {
-                background-color: #151824;
-                border: 1px solid #232738;
+                background-color: #121316;
+                border: 1px solid #292b30;
                 border-radius: 10px;
             }
             QLabel {
@@ -74,13 +77,13 @@ class EpisodeRowWidget(QFrame):
         self.episode_data = episode_data
         self.setStyleSheet("""
             QFrame {
-                background-color: #1A1D2B;
-                border: 1px solid #282E44;
+                background-color: #17191d;
+                border: 1px solid #303238;
                 border-radius: 8px;
                 padding: 4px;
             }
             QFrame:hover {
-                border-color: #7C5CFF;
+                border-color: #3b82f6;
                 background-color: #202436;
             }
         """)
@@ -135,6 +138,7 @@ class DetailView(QWidget):
         self.details_worker = None
         self.streams_worker = None
         self.play_worker = None
+        self._expected_cover_urls = set()
         self.init_ui()
 
     def init_ui(self):
@@ -185,7 +189,7 @@ class DetailView(QWidget):
         self.poster_label = QLabel()
         self.poster_label.setFixedSize(160, 230)
         self.poster_label.setAlignment(Qt.AlignCenter)
-        self.poster_label.setStyleSheet("background-color: #1A1D2B; border-radius: 8px; color: #64748B;")
+        self.poster_label.setStyleSheet("background-color: #17191d; border-radius: 6px; color: #737780;")
         self.poster_label.setText("Yükleniyor...")
         self.poster_label.setScaledContents(True)
         header_card_layout.addWidget(self.poster_label)
@@ -233,6 +237,8 @@ class DetailView(QWidget):
 
     def load_anime(self, anime_data: dict):
         self.current_anime = anime_data
+        self.details_data = None
+        self._expected_cover_urls.clear()
         title = anime_data.get("title") or anime_data.get("name") or "Anime"
         self.title_label.setText(title)
         self.header_title.setText(title)
@@ -255,7 +261,8 @@ class DetailView(QWidget):
         # Load cover immediately if available
         cover_url = anime_data.get("cover")
         if cover_url:
-            self._image_worker1 = ImageLoaderWorker(cover_url, parent=self)
+            self._expected_cover_urls.add(cover_url)
+            self._image_worker1 = ImageLoaderWorker(cover_url, self.poster_label.size(), parent=self)
             self._image_worker1.image_loaded.connect(self._on_image_loaded)
             self._image_worker1.start()
 
@@ -263,24 +270,20 @@ class DetailView(QWidget):
         slug = anime_data.get("slug") or anime_data.get("id")
         source = config.get("scraping_source", "animecix")
 
-        if self.details_worker and self.details_worker.isRunning():
-            self.details_worker.terminate()
-
         self.details_worker = DetailsWorker(slug, source)
-        self.details_worker.details_ready.connect(self._on_details_ready)
-        self.details_worker.error_occurred.connect(self._on_details_error)
-        self.details_worker.start()
+        self.details_worker.details_ready.connect(self._on_details_ready, Qt.QueuedConnection)
+        self.details_worker.error_occurred.connect(self._on_details_error, Qt.QueuedConnection)
+        start_background_worker(self, self.details_worker)
 
-    def _on_image_loaded(self, url, img):
-        if not img.isNull():
-            pixmap = QPixmap.fromImage(img) if isinstance(img, QImage) else img
-            self.poster_label.setPixmap(pixmap.scaled(
-                self.poster_label.size(), 
-                Qt.KeepAspectRatioByExpanding, 
-                Qt.SmoothTransformation
-            ))
+    def _on_image_loaded(self, url, image):
+        if url not in self._expected_cover_urls:
+            return
+        if not image.isNull():
+            self.poster_label.setPixmap(QPixmap.fromImage(image))
 
     def _on_details_ready(self, details: dict):
+        if self.sender() is not self.details_worker:
+            return
         self.loading_bar.hide()
         self.details_data = details
 
@@ -297,7 +300,7 @@ class DetailView(QWidget):
         year = details.get("year")
         if year:
             yb = QLabel(f"📅 {year}")
-            yb.setStyleSheet("background-color: #232738; color: #94A3B8; border-radius: 4px; padding: 2px 8px; font-size: 11px;")
+            yb.setStyleSheet("background-color: #202226; color: #a1a1aa; border-radius: 4px; padding: 2px 8px; font-size: 11px;")
             self.tags_layout.addWidget(yb)
 
         status = details.get("status")
@@ -309,7 +312,7 @@ class DetailView(QWidget):
         genres = details.get("genres", [])
         for g in genres[:4]:
             gb = QLabel(str(g))
-            gb.setStyleSheet("background-color: rgba(124, 92, 255, 0.2); color: #B5A2FF; border-radius: 4px; padding: 2px 8px; font-size: 11px;")
+            gb.setStyleSheet("background-color: #172554; color: #93c5fd; border-radius: 4px; padding: 2px 8px; font-size: 11px;")
             self.tags_layout.addWidget(gb)
 
         self.tags_layout.addStretch()
@@ -317,13 +320,24 @@ class DetailView(QWidget):
         # Update cover if details had a better one
         cover_url = details.get("cover")
         if cover_url:
-            self._image_worker2 = ImageLoaderWorker(cover_url, parent=self)
+            self._expected_cover_urls.add(cover_url)
+            self._image_worker2 = ImageLoaderWorker(cover_url, self.poster_label.size(), parent=self)
             self._image_worker2.image_loaded.connect(self._on_image_loaded)
             self._image_worker2.start()
 
         # Episodes
         episodes = details.get("episodes", [])
         self.episodes_count_label.setText(f"Bölümler ({len(episodes)} Bölüm)")
+
+        if not episodes:
+            unavailable = QLabel(
+                "Bu içerik için seçili kaynakta izlenebilir yayın bulunamadı. "
+                "Arama ekranından başka bir kaynak deneyebilirsiniz."
+            )
+            unavailable.setWordWrap(True)
+            unavailable.setStyleSheet("color: #9ca3af; padding: 12px 4px;")
+            self.episodes_container.addWidget(unavailable)
+            return
 
         slug = details.get("slug") or details.get("id") or self.current_anime.get("slug")
         progress = progress_tracker.get_anime_progress(slug)
@@ -338,10 +352,14 @@ class DetailView(QWidget):
             self.episodes_container.addWidget(row)
 
     def _on_details_error(self, err_msg):
+        if self.sender() is not self.details_worker:
+            return
         self.loading_bar.hide()
         self.desc_label.setText(f"Hata: {err_msg}")
 
     def _on_play_requested(self, episode_data: dict):
+        if not self.details_data:
+            return
         anime_id = self.details_data.get("id") or self.current_anime.get("id") or self.current_anime.get("slug")
         ep_id = episode_data.get("id")
         
@@ -349,11 +367,16 @@ class DetailView(QWidget):
         source = config.get("scraping_source", "animecix")
 
         self.streams_worker = StreamsWorker(anime_id, ep_id, source)
-        self.streams_worker.streams_ready.connect(lambda links: self._on_streams_ready(links, episode_data))
-        self.streams_worker.error_occurred.connect(self._on_streams_error)
-        self.streams_worker.start()
+        self.streams_worker.streams_ready.connect(self._on_streams_ready, Qt.QueuedConnection)
+        self.streams_worker.error_occurred.connect(self._on_streams_error, Qt.QueuedConnection)
+        self.streams_worker.setProperty("episode_data", episode_data)
+        start_background_worker(self, self.streams_worker)
 
-    def _on_streams_ready(self, links: list, episode_data: dict):
+    def _on_streams_ready(self, links: list):
+        worker = self.sender()
+        if worker is not self.streams_worker:
+            return
+        episode_data = worker.property("episode_data") or {}
         self.loading_bar.hide()
         if not links:
             QMessageBox.warning(self, "Yayın Hatası", "Bu bölüm için oynatılabilir bir yayın bağlantısı bulunamadı.")
@@ -387,9 +410,11 @@ class DetailView(QWidget):
             episode_number=ep_num,
             total_episodes=total_eps
         )
-        self.play_worker.start()
+        start_background_worker(self, self.play_worker)
 
     def _on_streams_error(self, err_msg):
+        if self.sender() is not self.streams_worker:
+            return
         self.loading_bar.hide()
         QMessageBox.warning(self, "Yayın Hatası", f"Yayın alınırken hata oluştu: {err_msg}")
 
@@ -405,4 +430,3 @@ class DetailView(QWidget):
             QMessageBox.information(self, "İndirme Eklendi", f"'{anime_title} - Bölüm {episode_data.get('number')}' indirme kuyruğuna eklendi.")
         else:
             QMessageBox.information(self, "Bilgi", "Bu bölüm zaten indirme kuyruğunda yer alıyor.")
-

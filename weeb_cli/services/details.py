@@ -1,9 +1,11 @@
 from typing import Optional, Dict
-from weeb_cli.services.scraper import scraper
+from weeb_cli.services.scraper import Scraper, scraper
 
 
-def get_details(anime_id: str) -> Optional[Dict]:
-    details = scraper.get_details(anime_id)
+def get_details(anime_id: str, source_name: Optional[str] = None) -> Optional[Dict]:
+    """Return details, optionally pinning the request to one provider."""
+    client = Scraper(source_name) if source_name else scraper
+    details = client.get_details(anime_id)
     if not details:
         return None
     

@@ -419,6 +419,22 @@ class AnizleProvider(BaseProvider):
                 return None
             
             p_text = player_response.text
+
+            # Aniizle's current player does not expose a media URL in the
+            # page.  It embeds a FirePlayer id and the browser POSTs that id
+            # to the player API to obtain a short-lived HLS URL.  The former
+            # provider only looked for static <source>/<iframe> tags, so every
+            # current Aniizle stream was incorrectly reported as unavailable.
+            fireplayer_id = _extract_fireplayer_id(p_text)
+            if fireplayer_id:
+                stream = self._get_fireplayer_stream(
+                    fireplayer_id,
+                    player_response.url or player_page_url,
+                    fansub,
+                    name,
+                )
+                if stream:
+                    return stream
             
             # Check for direct video sources (mp4, m3u8)
             direct_src = re.findall(r'(?:source|file)\s*(?::|=)\s*[\"\'](https?://[^\"\']+\.(?:mp4|m3u8)[^\"\']*)[\"\']', p_text, re.IGNORECASE)
@@ -444,3 +460,40 @@ class AnizleProvider(BaseProvider):
             
         except Exception:
             return None
+
+    def _get_fireplayer_stream(
+        self, player_id: str, referer: str, fansub: str, player_name: str
+    ) -> Optional[StreamLink]:
+        """Resolve Aniizle's current FirePlayer API response to an HLS URL."""
+        endpoint = f"{PLAYER_BASE_URL}/player/index.php?data={player_id}&do=getVideo"
+        response = _http_post(
+            endpoint,
+            headers={
+                "Referer": referer,
+                "Origin": PLAYER_BASE_URL,
+            },
+            data={"hash": player_id, "r": referer},
+            timeout=20,
+        )
+        if not response or response.status_code != 200:
+            return None
+
+        try:
+            data = response.json()
+        except (ValueError, TypeError):
+            return None
+
+        stream_url = data.get("videoSource") or data.get("securedLink")
+        if not stream_url:
+            sources = data.get("videoSources") or []
+            if sources and isinstance(sources[0], dict):
+                stream_url = sources[0].get("file")
+        if not stream_url or not isinstance(stream_url, str):
+            return None
+
+        return StreamLink(
+            url=stream_url.replace("\\/", "/"),
+            quality="auto",
+            server=f"{fansub} - {player_name}",
+            headers={"Referer": referer},
+        )

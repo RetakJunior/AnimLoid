@@ -11,6 +11,7 @@ class AnimeResult:
     type: str = "series"
     cover: Optional[str] = None
     year: Optional[int] = None
+    playable: Optional[bool] = None
     
     
 @dataclass

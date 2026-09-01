@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="animloid",
-    version="2.7.0",
+    version="2.7.1",
     packages=find_packages(include=["weeb_cli", "weeb_cli.*"]),
     package_data={"weeb_cli": ["locales/*.json", "templates/*.html"]},
     py_modules=["weeb_app_entry", "gui_main"],
@@ -14,6 +14,6 @@ setup(
     install_requires=[
         "typer[all]", "rich", "questionary", "requests",
         "packaging", "beautifulsoup4", "lxml", "pycryptodome",
-        "curl_cffi", "appdirs", "pyfiglet", "py7zr", "pypresence",
+        "curl_cffi", "appdirs", "pyfiglet", "py7zr", "pypresence", "PyQt5>=5.15.0",
     ],
 )

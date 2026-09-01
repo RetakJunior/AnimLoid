@@ -16,6 +16,11 @@ from weeb_cli.providers.registry import register_provider
 BASE_URL = "https://animecix.tv/"
 ALT_URL = "https://mangacix.net/"
 VIDEO_PLAYERS = ["tau-video.xyz", "sibnet"]
+# The search endpoint already carries the reliable catalogue metadata.  The
+# legacy details endpoint frequently returns empty data (and /titles/{id} can
+# even return a different title), so retain this small in-process lookup for
+# the detail request that immediately follows a search result click.
+_SEARCH_METADATA = {}
 
 HEADERS = {
     "Accept": "application/json",
@@ -69,10 +74,16 @@ class AnimeCixProvider(BaseProvider):
             name = item.get("name")
             _id = item.get("id")
             if name and _id:
+                _SEARCH_METADATA[str(_id)] = item
                 results.append(AnimeResult(
                     id=str(_id),
                     title=str(name),
-                    type=self._parse_type(item.get("title_type", ""))
+                    type=self._parse_type(item.get("title_type") or item.get("type", "")),
+                    cover=item.get("poster") or None,
+                    year=item.get("year") or None,
+                    # AnimeCix returns catalogue-only films alongside actual
+                    # streams.  Do not pretend those records can be played.
+                    playable=bool(item.get("episode_count")),
                 ))
         
         return results
@@ -86,24 +97,13 @@ class AnimeCixProvider(BaseProvider):
         url = f"{ALT_URL}secure/related-videos?episode=1&season=1&titleId={safe_id}&videoId=637113"
         data = _get_json(url)
         
-        title_data = None
+        title_data = _SEARCH_METADATA.get(str(safe_id))
         if data and "videos" in data:
             videos = data.get("videos") or []
-            if videos:
+            if videos and not title_data:
                 title_data = videos[0].get("title")
         
         episodes = self.get_episodes(anime_id)
-        
-        if not episodes:
-            movie_url = self._get_movie_url(safe_id)
-            if movie_url:
-                title_name = title_data.get("name", "Film") if title_data else "Film"
-                episodes = [Episode(
-                    id=movie_url,
-                    number=1,
-                    title=title_name,
-                    url=movie_url
-                )]
         
         if not title_data:
             return AnimeDetails(
@@ -118,26 +118,11 @@ class AnimeCixProvider(BaseProvider):
             title=title_data.get("name", ""),
             description=title_data.get("description"),
             cover=title_data.get("poster"),
-            genres=[g.get("name", "") for g in title_data.get("genres", [])],
+            genres=[g.get("name", "") for g in title_data.get("genres", []) if g.get("name")],
             year=title_data.get("year"),
             episodes=episodes,
             total_episodes=len(episodes)
         )
-    
-    def _get_movie_url(self, title_id: int) -> Optional[str]:
-        url = f"{ALT_URL}secure/titles/{title_id}"
-        data = _get_json(url)
-        
-        if not data or "title" not in data:
-            return None
-        
-        title = data["title"]
-        videos = title.get("videos") or []
-        
-        if videos:
-            return videos[0].get("url")
-        
-        return None
     
     def get_episodes(self, anime_id: str) -> List[Episode]:
         try:

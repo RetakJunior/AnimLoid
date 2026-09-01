@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=AnimLoid
+Comment=Anime izle ve indir
+Exec=AnimLoid
+Icon=animloid
+Categories=AudioVideo;Video;Network;
+Terminal=false
+StartupWMClass=AnimLoid

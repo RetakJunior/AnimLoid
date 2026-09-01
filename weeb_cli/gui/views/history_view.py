@@ -20,13 +20,13 @@ class HistoryCard(QFrame):
         self.setProperty("class", "Card")
         self.setStyleSheet("""
             QFrame.Card {
-                background-color: #1A1D2B;
-                border: 1px solid #282E44;
+                background-color: #17191d;
+                border: 1px solid #303238;
                 border-radius: 10px;
                 padding: 12px;
             }
             QFrame.Card:hover {
-                border-color: #7C5CFF;
+                border-color: #3b82f6;
                 background-color: #202436;
             }
         """)
@@ -43,7 +43,7 @@ class HistoryCard(QFrame):
 
         last_watched = anime_info.get("last_watched", 0)
         ep_badge = QLabel(f"Son: Bölüm {last_watched}")
-        ep_badge.setStyleSheet("background-color: rgba(124, 92, 255, 0.2); color: #B5A2FF; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: bold;")
+        ep_badge.setStyleSheet("background-color: #172554; color: #93c5fd; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: bold;")
         header_layout.addWidget(ep_badge)
         layout.addLayout(header_layout)
 
@@ -149,8 +149,8 @@ class HistoryView(QWidget):
         frame = QFrame()
         frame.setStyleSheet("""
             QFrame {
-                background-color: #151824;
-                border: 1px solid #232738;
+                background-color: #121316;
+                border: 1px solid #292b30;
                 border-radius: 8px;
                 padding: 10px 14px;
             }
@@ -206,4 +206,3 @@ class HistoryView(QWidget):
             "name": anime_info.get("title") or anime_info.get("slug"),
         }
         self.anime_selected.emit(anime_data)
-

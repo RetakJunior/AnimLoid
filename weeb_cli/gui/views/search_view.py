@@ -6,13 +6,13 @@ from PyQt5.QtWidgets import (
     QComboBox, QLabel, QScrollArea, QGridLayout, QFrame, 
     QGraphicsDropShadowEffect, QSizePolicy, QProgressBar
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QSize, QThreadPool
-from PyQt5.QtGui import QPixmap, QColor, QFont, QCursor, QImage
+from PyQt5.QtCore import Qt, pyqtSignal, QSize, QThreadPool, QTimer
+from PyQt5.QtGui import QPixmap, QColor, QFont, QCursor
 
 from weeb_cli.config import config
 from weeb_cli.services.scraper import scraper
 from weeb_cli.services.progress import progress_tracker
-from weeb_cli.gui.workers import SearchWorker, ImageLoaderWorker
+from weeb_cli.gui.workers import SearchWorker, ImageLoaderWorker, start_background_worker
 
 
 class AnimeCard(QFrame):
@@ -34,7 +34,7 @@ class AnimeCard(QFrame):
         self.poster_label = QLabel()
         self.poster_label.setFixedSize(154, 210)
         self.poster_label.setAlignment(Qt.AlignCenter)
-        self.poster_label.setStyleSheet("background-color: #1A1D2B; border-radius: 8px; color: #64748B;")
+        self.poster_label.setStyleSheet("background-color: #17191d; border-radius: 6px; color: #737780;")
         self.poster_label.setText("Yükleniyor...")
         self.poster_label.setScaledContents(True)
         layout.addWidget(self.poster_label)
@@ -56,12 +56,15 @@ class AnimeCard(QFrame):
         year = anime_data.get("year")
         if year:
             year_badge = QLabel(str(year))
-            year_badge.setStyleSheet("background-color: #232738; color: #94A3B8; border-radius: 4px; padding: 1px 5px; font-size: 10px;")
+            year_badge.setStyleSheet("background-color: #202226; color: #a1a1aa; border-radius: 4px; padding: 1px 5px; font-size: 10px;")
             meta_layout.addWidget(year_badge)
 
+        playable = anime_data.get("playable")
         anime_type = anime_data.get("type") or "Series"
-        type_badge = QLabel(str(anime_type).capitalize())
-        type_badge.setStyleSheet("background-color: rgba(124, 92, 255, 0.2); color: #B5A2FF; border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: bold;")
+        badge_text = "Yayın yok" if playable is False else str(anime_type).capitalize()
+        type_badge = QLabel(badge_text)
+        badge_color = "#3f3f46; color: #a1a1aa" if playable is False else "#172554; color: #93c5fd"
+        type_badge.setStyleSheet(f"background-color: {badge_color}; border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: bold;")
         meta_layout.addWidget(type_badge)
         meta_layout.addStretch()
 
@@ -70,21 +73,18 @@ class AnimeCard(QFrame):
         # Load cover asynchronously
         cover_url = anime_data.get("cover")
         if cover_url:
-            self._image_worker = ImageLoaderWorker(cover_url, parent=self)
-            self._image_worker.image_loaded.connect(self._on_image_loaded)
-            self._image_worker.image_failed.connect(self._on_image_failed)
+            self._image_worker = ImageLoaderWorker(cover_url, self.poster_label.size(), parent=self)
+            self._image_worker.image_loaded.connect(self._on_image_loaded, Qt.QueuedConnection)
+            self._image_worker.image_failed.connect(self._on_image_failed, Qt.QueuedConnection)
             self._image_worker.start()
         else:
             self.poster_label.setText("Afiş Yok")
 
-    def _on_image_loaded(self, url, img):
-        if not img.isNull():
-            pixmap = QPixmap.fromImage(img) if isinstance(img, QImage) else img
-            self.poster_label.setPixmap(pixmap.scaled(
-                self.poster_label.size(), 
-                Qt.KeepAspectRatioByExpanding, 
-                Qt.SmoothTransformation
-            ))
+    def _on_image_loaded(self, url, image):
+        if not image.isNull():
+            # QPixmap is deliberately created in the GUI thread; doing this
+            # in ImageLoaderWorker can freeze or crash Qt on some systems.
+            self.poster_label.setPixmap(QPixmap.fromImage(image))
 
     def _on_image_failed(self, url):
         self.poster_label.setText("Afiş Yok")
@@ -101,6 +101,8 @@ class SearchView(QWidget):
         super().__init__()
         self.thread_pool = QThreadPool.globalInstance()
         self.search_worker = None
+        self._results = []
+        self._displayed_columns = 0
         self.init_ui()
 
     def init_ui(self):
@@ -213,7 +215,7 @@ class SearchView(QWidget):
                 QPushButton:hover {
                     background-color: #282E47;
                     color: #FFFFFF;
-                    border-color: #7C5CFF;
+                    border-color: #3b82f6;
                 }
             """)
             btn.setCursor(QCursor(Qt.PointingHandCursor))
@@ -248,15 +250,16 @@ class SearchView(QWidget):
         self.loading_bar.show()
         self.search_btn.setEnabled(False)
 
-        if self.search_worker and self.search_worker.isRunning():
-            self.search_worker.terminate()
-
         self.search_worker = SearchWorker(query, source)
-        self.search_worker.results_ready.connect(self._on_results_ready)
-        self.search_worker.error_occurred.connect(self._on_search_error)
-        self.search_worker.start()
+        # Connect directly to a QObject method.  A lambda has no QObject
+        # receiver context in PyQt and can execute UI code in the worker.
+        self.search_worker.results_ready.connect(self._on_results_ready, Qt.QueuedConnection)
+        self.search_worker.error_occurred.connect(self._on_search_error, Qt.QueuedConnection)
+        start_background_worker(self, self.search_worker)
 
     def _on_results_ready(self, results):
+        if self.sender() is not self.search_worker:
+            return
         self.loading_bar.hide()
         self.search_btn.setEnabled(True)
 
@@ -265,20 +268,44 @@ class SearchView(QWidget):
             return
 
         self.status_label.setText(f"{len(results)} sonuç bulundu:")
-
-        columns = 5
-        for i, anime in enumerate(results):
-            row = i // columns
-            col = i % columns
-            card = AnimeCard(anime, self.thread_pool)
-            card.clicked.connect(self._on_card_clicked)
-            self.grid_layout.addWidget(card, row, col)
+        self._results = results
+        self._render_results()
 
     def _on_search_error(self, err_msg):
+        if self.sender() is not self.search_worker:
+            return
         self.loading_bar.hide()
         self.search_btn.setEnabled(True)
         self.status_label.setText(f"Hata oluştu: {err_msg}")
 
+    def _column_count(self):
+        # Keep every card visible: the former fixed five-column layout was
+        # wider than the content area on ordinary laptop-sized windows.
+        available_width = max(1, self.scroll_area.viewport().width())
+        return max(1, (available_width + 16) // 186)
+
+    def _render_results(self):
+        columns = self._column_count()
+        self._displayed_columns = columns
+
+        while self.grid_layout.count():
+            item = self.grid_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        for i, anime in enumerate(self._results):
+            card = AnimeCard(anime, self.thread_pool)
+            card.clicked.connect(self._on_card_clicked)
+            self.grid_layout.addWidget(card, i // columns, i % columns)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._results:
+            QTimer.singleShot(0, self._reflow_results_if_needed)
+
+    def _reflow_results_if_needed(self):
+        if self._results and self._column_count() != self._displayed_columns:
+            self._render_results()
+
     def _on_card_clicked(self, anime_data):
         self.anime_selected.emit(anime_data)
-

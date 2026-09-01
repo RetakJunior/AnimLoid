@@ -1,24 +1,63 @@
 """Asynchronous workers and background threads for AnimLoid GUI."""
 
 import os
-import urllib.request
-from PyQt5.QtCore import QThread, pyqtSignal, QObject
-from PyQt5.QtGui import QPixmap, QImage
+import threading
+from PyQt5.QtCore import QThread, pyqtSignal, QObject, QSize, Qt, QUrl
+from PyQt5.QtGui import QImage
+from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest
 
 from weeb_cli.config import config
 from weeb_cli.providers import get_provider
-from weeb_cli.services.scraper import scraper
 from weeb_cli.services.details import get_details
 from weeb_cli.services.watch import get_streams
 from weeb_cli.services.player import player
 from weeb_cli.services.dependency_manager import dependency_manager
 from weeb_cli.services.downloader import queue_manager
 
+# QPixmap is a GUI-only resource in Qt.  Keep decoded images as QImage here,
+# because QImage may safely be created and resized in a worker thread.  The
+# view turns it into a QPixmap only after the signal reaches the GUI thread.
 _IMAGE_CACHE: dict = {}
+_IMAGE_CACHE_LOCK = threading.Lock()
+_LIVE_WORKERS = set()
 
 
-class ImageLoaderWorker(QThread):
-    """Load a remote image in a QThread safely using QImage."""
+def start_background_worker(owner, worker):
+    """Start a QThread without letting a view destroy it while it is running.
+
+    A user can start another search or leave a detail page while a provider is
+    still waiting for a network timeout.  Keeping a reference until `finished`
+    prevents Qt's fatal "QThread: Destroyed while thread is still running"
+    shutdown path.  It also lets old requests finish harmlessly instead of
+    force-stopping them with QThread.terminate().
+    """
+    active_workers = getattr(owner, "_active_workers", None)
+    if active_workers is None:
+        active_workers = set()
+        owner._active_workers = active_workers
+
+    # A view can be closed or replaced before a slow provider request returns.
+    # QThread must outlive its native thread in that case, so do not let Qt
+    # destroy it as a child of the view.
+    worker.setParent(None)
+    active_workers.add(worker)
+    _LIVE_WORKERS.add(worker)
+
+    def clean_up():
+        active_workers.discard(worker)
+        _LIVE_WORKERS.discard(worker)
+        worker.deleteLater()
+
+    # QThread subclasses emit from run().  Force this housekeeping callback
+    # onto the GUI queue as well; relying on AutoConnection differs between
+    # Qt/PyQt builds and can otherwise execute Python cleanup in the worker.
+    worker.finished.connect(clean_up, Qt.QueuedConnection)
+    worker.start()
+    return worker
+
+
+class ImageLoaderWorker(QObject):
+    """Event-driven poster loader that never starts a Python worker thread."""
     image_loaded = pyqtSignal(str, QImage)
     image_failed = pyqtSignal(str)
 
@@ -26,48 +65,57 @@ class ImageLoaderWorker(QThread):
         super().__init__(parent)
         self.url = url
         self.target_size = target_size
+        self._network = QNetworkAccessManager(self)
+        self._reply = None
 
-    def run(self):
+    def start(self):
         if not self.url:
             self.image_failed.emit(self.url or "")
             return
 
-        if self.url in _IMAGE_CACHE:
-            cached_img = _IMAGE_CACHE[self.url]
-            if not cached_img.isNull():
-                self.image_loaded.emit(self.url, cached_img)
-                return
+        width = self.target_size.width() if self.target_size else 0
+        height = self.target_size.height() if self.target_size else 0
+        cache_key = (self.url, width, height)
+        with _IMAGE_CACHE_LOCK:
+            cached_image = _IMAGE_CACHE.get(cache_key)
+        if cached_image is not None:
+            self.image_loaded.emit(self.url, cached_image)
+            return
 
-        content = None
-        # 1) Try curl_cffi
+        request = QNetworkRequest(QUrl(self.url))
+        request.setHeader(
+            QNetworkRequest.UserAgentHeader,
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        )
+        # Do not advertise AVIF: many Qt5 builds cannot decode it even when
+        # the URL has a .jpg extension, so CDNs may return an image Qt shows
+        # as an empty poster.
+        request.setRawHeader(b"Accept", b"image/jpeg,image/png,image/*,*/*;q=0.8")
+        self._reply = self._network.get(request)
+        self._reply.finished.connect(self._finished)
+
+    def _finished(self):
+        reply = self._reply
+        self._reply = None
         try:
-            from curl_cffi import requests as cr
-            resp = cr.get(self.url, impersonate="chrome120", timeout=8)
-            if resp.status_code == 200:
-                content = resp.content
-        except Exception:
-            pass
-
-        # 2) Fallback urllib
-        if content is None:
-            try:
-                req = urllib.request.Request(
-                    self.url,
-                    headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"}
-                )
-                with urllib.request.urlopen(req, timeout=8) as r:
-                    content = r.read()
-            except Exception:
-                pass
-
-        if content:
-            image = QImage()
-            if image.loadFromData(content):
-                _IMAGE_CACHE[self.url] = image
-                self.image_loaded.emit(self.url, image)
+            content = bytes(reply.readAll()) if reply else b""
+            if not reply or reply.error() != reply.NoError or len(content) > 15 * 1024 * 1024:
+                self.image_failed.emit(self.url)
                 return
-
-        self.image_failed.emit(self.url)
+            image = QImage()
+            if not content or not image.loadFromData(content):
+                self.image_failed.emit(self.url)
+                return
+            width = self.target_size.width() if self.target_size else 0
+            height = self.target_size.height() if self.target_size else 0
+            if width > 0 and height > 0:
+                image = image.scaled(QSize(width, height), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            with _IMAGE_CACHE_LOCK:
+                _IMAGE_CACHE[(self.url, width, height)] = image
+            self.image_loaded.emit(self.url, image)
+        finally:
+            if reply:
+                reply.deleteLater()
 
 
 
@@ -83,10 +131,11 @@ class SearchWorker(QThread):
 
     def run(self):
         try:
-            if self.source_name:
-                config.set("scraping_source", self.source_name)
-            
-            results = scraper.search(self.query)
+            # Each request owns its scraper instance.  Changing global config
+            # from a QThread can race with a detail/stream request and make
+            # its result come from a different source.
+            from weeb_cli.services.scraper import Scraper
+            results = Scraper(self.source_name).search(self.query)
             
             # Standardize results into dicts
             formatted_results = []
@@ -101,6 +150,7 @@ class SearchWorker(QThread):
                             "type": getattr(r, "type", "series"),
                             "cover": getattr(r, "cover", None),
                             "year": getattr(r, "year", None),
+                            "playable": getattr(r, "playable", None),
                         })
                     elif isinstance(r, dict):
                         formatted_results.append(r)
@@ -121,10 +171,7 @@ class DetailsWorker(QThread):
 
     def run(self):
         try:
-            if self.source_name:
-                config.set("scraping_source", self.source_name)
-
-            details = get_details(self.slug)
+            details = get_details(self.slug, self.source_name)
             if details:
                 self.details_ready.emit(details)
             else:
@@ -145,10 +192,7 @@ class StreamsWorker(QThread):
 
     def run(self):
         try:
-            if self.source_name:
-                config.set("scraping_source", self.source_name)
-
-            stream_data = get_streams(self.anime_id, self.episode_id)
+            stream_data = get_streams(self.anime_id, self.episode_id, self.source_name)
             if stream_data and "data" in stream_data and "links" in stream_data["data"]:
                 links = stream_data["data"]["links"]
                 self.streams_ready.emit(links)
@@ -213,4 +257,3 @@ class InstallDependencyWorker(QThread):
             self.install_finished.emit(self.dep_name, bool(res))
         except Exception:
             self.install_finished.emit(self.dep_name, False)
-

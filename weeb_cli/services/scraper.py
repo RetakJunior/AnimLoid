@@ -7,14 +7,17 @@ from weeb_cli.exceptions import ProviderError
 
 class Scraper:
     
-    def __init__(self):
+    def __init__(self, source_name: Optional[str] = None):
         self._provider = None
         self._provider_name = None
+        self._source_name = source_name
         self.last_error = None
     
     @property
     def provider(self):
-        current_source = config.get("scraping_source", "")
+        # GUI workers pass an explicit source so they do not write shared
+        # configuration while another request is in progress.
+        current_source = self._source_name or config.get("scraping_source", "")
         
         if self._provider_name != current_source:
             self._provider_name = current_source
