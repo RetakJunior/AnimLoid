@@ -88,7 +88,7 @@ class AnimLoidApp(QMainWindow):
         app_title.setObjectName("LogoTitle")
         title_box.addWidget(app_title)
 
-        app_sub = QLabel("v2.7.1 • Anime izle ve indir")
+        app_sub = QLabel("v2.7.2 • Anime izle ve indir")
         app_sub.setObjectName("LogoSubtitle")
         title_box.addWidget(app_sub)
 
