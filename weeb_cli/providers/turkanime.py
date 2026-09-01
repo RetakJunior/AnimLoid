@@ -1,9 +1,11 @@
 import os
 import re
 import json
+import html as html_module
 from typing import List, Optional, Dict
 from hashlib import md5
 from base64 import b64decode
+from urllib.parse import quote_plus
 
 from weeb_cli.providers.base import (
     BaseProvider,
@@ -298,30 +300,68 @@ class TurkAnimeProvider(BaseProvider):
         seen = set()
         query_lower = q.lower()
         
-        # 1. Direct slug check (e.g. "one-piece", "naruto")
+        # 1. Direct slug check (e.g. "one-piece", "naruto").  Include the
+        # site's actual poster now; formerly every exact result had ``None``
+        # here, so the search grid could never show a TurkAnime image.
         slug_direct = re.sub(r'[^a-zA-Z0-9]+', '-', query_lower).strip('-')
         if slug_direct:
             html_direct = _fetch(f'/anime/{slug_direct}')
             if html_direct and '<title>' in html_direct and '404' not in html_direct:
                 title_m = re.findall(r'<title>(.*?)</title>', html_direct)
                 t_name = title_m[0].split('|')[0].replace('izle', '').strip() if title_m else slug_direct.replace('-', ' ').title()
-                results.append(AnimeResult(id=slug_direct, title=t_name))
+                results.append(AnimeResult(
+                    id=slug_direct,
+                    title=html_module.unescape(t_name),
+                    cover=self._cover_from_html(html_direct),
+                ))
                 seen.add(slug_direct)
         
-        # 2. Check tamliste or animeler page
-        html = _fetch("/animeler")
+        # 2. TurkAnime's old full-list page is large and only exposes current
+        # items.  Its search route returns real result cards (including
+        # ``data-src`` posters), works for translated titles such as Attack on
+        # Titan, and avoids blocking a background request on a huge page.
+        html = _fetch(f"/arama?arama={quote_plus(q)}")
         if html:
-            matches = re.findall(r'href=[\"\'](?:https?:)?//(?:www\.)?turkanime\.tv/anime/([^\"\'#]+)[\"\']', html)
-            for slug in matches:
+            # The page also contains the site's "currently airing" carousel.
+            # Only parse cards after the search-results heading; otherwise
+            # unrelated carousel titles are returned before the actual match.
+            results_heading = re.search(
+                r'<div class="panel-title">.*?için arama sonuçları</div>',
+                html,
+                re.IGNORECASE | re.DOTALL,
+            )
+            if results_heading:
+                html = html[results_heading.end():]
+            matches = list(re.finditer(
+                r'href=[\"\'](?:https?:)?//(?:www\.)?turkanime\.tv/anime/([^\"\'#]+)[\"\']',
+                html,
+                re.IGNORECASE,
+            ))
+            for match in matches:
+                slug = match.group(1)
                 slug_clean = slug.strip('/')
-                if slug_clean not in seen and query_lower in slug_clean.replace('-', ' '):
+                if slug_clean not in seen:
+                    card_html = html[match.start():match.start() + 1800]
+                    title_match = re.search(r'>\s*([^<>]{2,140}?)\s*</a>', card_html)
+                    title = title_match.group(1).strip() if title_match else slug_clean.replace('-', ' ').title()
                     seen.add(slug_clean)
                     results.append(AnimeResult(
                         id=slug_clean,
-                        title=slug_clean.replace('-', ' ').title()
+                        title=html_module.unescape(re.sub(r'\s+', ' ', title)),
+                        cover=self._cover_from_html(card_html),
                     ))
         
         return results[:20]
+
+    @staticmethod
+    def _cover_from_html(html: str) -> Optional[str]:
+        match = re.search(r'(?:twitter:image|og:image)[^>]+content=[\"\']([^\"\']+)', html, re.IGNORECASE)
+        if not match:
+            match = re.search(r'(?:data-src|src)=[\"\'](//[^\"\']+/imajlar/seriler(?:b)?/[^\"\']+)', html, re.IGNORECASE)
+        if not match:
+            return None
+        cover = html_module.unescape(match.group(1).strip())
+        return f"https:{cover}" if cover.startswith("//") else cover
     
     def get_details(self, anime_id: str) -> Optional[AnimeDetails]:
         html = _fetch(f'/anime/{anime_id}')
@@ -330,6 +370,8 @@ class TurkAnimeProvider(BaseProvider):
         
         title_match = re.findall(r'<title>(.*?)</title>', html)
         title = title_match[0] if title_match else anime_id
+        title = html_module.unescape(title.split("|")[0]).strip()
+        title = re.sub(r'\s+izle\s*$', '', title, flags=re.IGNORECASE).strip()
         
         img_match = re.findall(r'twitter.image" content="(.*?)"', html)
         cover = img_match[0] if img_match else None
@@ -342,7 +384,6 @@ class TurkAnimeProvider(BaseProvider):
         if not desc_match:
             desc_match = re.search(r'og:description"\s+content="([^"]+)"', html)
         if desc_match:
-            import html as html_module
             description = html_module.unescape(desc_match.group(1)).strip()
         
         info = {}
@@ -478,6 +519,9 @@ class TurkAnimeProvider(BaseProvider):
             return None
         
         url = url.replace("uqload.io", "uqload.com")
+        url = self._prepare_stream_url(url)
+        if not url:
+            return None
         
         if "turkanime" in url:
             url = _unmask_real_url(url)
@@ -493,6 +537,35 @@ class TurkAnimeProvider(BaseProvider):
             quality="auto",
             server=f"{clean_fansub} - {player_clean}"
         )
+
+    @staticmethod
+    def _prepare_stream_url(url: str) -> str:
+        """Turn valid PixelDrain shares into media URLs and reject dead ones.
+
+        TurkAnime can keep an expired PixelDrain share in a server list.  MPV
+        then opens a non-media 404 page and appears to do nothing.  The API
+        endpoint is both the direct playable URL and a cheap validity check.
+        """
+        match = re.search(r'pixeldrain\.com/(?:u|api/file)/([A-Za-z0-9]+)', url, re.IGNORECASE)
+        if not match:
+            return url
+
+        media_url = f"https://pixeldrain.com/api/file/{match.group(1)}?download"
+        try:
+            response = _get_thread_session().get(
+                media_url,
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=6,
+                stream=True,
+            )
+            try:
+                if response.status_code not in (200, 206):
+                    return ""
+            finally:
+                response.close()
+        except Exception:
+            return ""
+        return media_url
     
     def _parse_episode_number(self, title: str, fallback: int) -> int:
         patterns = [

@@ -28,6 +28,7 @@ PLAYER_BASE_URL = "https://anizmplayer.com"
 _anime_database: List[Dict[str, Any]] = []
 _database_loaded: bool = False
 _session = None
+_poster_cache: Dict[int, str] = {}
 
 DEFAULT_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -98,6 +99,57 @@ def _load_database() -> List[Dict[str, Any]]:
     return _anime_database
 
 
+def _resolve_anilist_posters(anime_items: List[Dict[str, Any]]) -> None:
+    """Populate a poster cache from AniList in one bounded request.
+
+    Aniizle currently serves ``anizm.pro/uploads/img`` behind a bot check,
+    which returns an HTML 403 page to Qt instead of an image.  Its search
+    payload already includes MAL ids, so AniList gives us a stable image CDN
+    without doing one slow request per result.
+    """
+    ids = []
+    for item in anime_items:
+        try:
+            mal_id = int(item.get("info_malid") or 0)
+        except (TypeError, ValueError):
+            continue
+        if mal_id and mal_id not in _poster_cache:
+            ids.append(mal_id)
+
+    if not ids:
+        return
+
+    query = (
+        "query ($ids: [Int]) { Page(perPage: 50) { "
+        "media(idMal_in: $ids, type: ANIME) { "
+        "idMal coverImage { large medium } } } }"
+    )
+    try:
+        # curl_cffi and requests both accept json=, but _http_post is kept
+        # form-oriented for Aniizle's own endpoints.  Send this request here
+        # directly so the GraphQL body remains valid JSON.
+        session = _get_session()
+        headers = {**DEFAULT_HEADERS, "Content-Type": "application/json"}
+        response = session.post(
+            "https://graphql.anilist.co",
+            headers=headers,
+            json={"query": query, "variables": {"ids": ids[:50]}},
+            timeout=10,
+        )
+        if not response or response.status_code != 200:
+            return
+        media = response.json().get("data", {}).get("Page", {}).get("media", [])
+        for item in media:
+            mal_id = item.get("idMal")
+            cover = (item.get("coverImage") or {}).get("large") or (item.get("coverImage") or {}).get("medium")
+            if mal_id and cover:
+                _poster_cache[int(mal_id)] = cover
+    except Exception:
+        # Covers are optional UI data.  Never make a provider search fail if
+        # the public image mirror happens to be unavailable.
+        return
+
+
 def _unpack_js(p: str, a: int, c: int, k: List[str]) -> str:
     def e(c: int, a: int) -> str:
         first = '' if c < a else e(c // a, a)
@@ -161,7 +213,7 @@ class AnizleProvider(BaseProvider):
         if not database:
             return []
         
-        results = []
+        matches = []
         for anime in database:
             scores = [
                 self._similarity(query, anime.get("info_title", "")),
@@ -174,15 +226,20 @@ class AnizleProvider(BaseProvider):
                 year_str = anime.get("info_year", "")
                 year = int(year_str) if year_str and str(year_str).isdigit() else None
                 
-                results.append((max_score, AnimeResult(
-                    id=anime.get("info_slug", ""),
-                    title=anime.get("info_title", ""),
-                    cover=self._get_poster_url(anime.get("info_poster", "")),
-                    year=year
-                )))
+                matches.append((max_score, anime, year))
         
-        results.sort(key=lambda x: x[0], reverse=True)
-        return [r[1] for r in results[:20]]
+        matches.sort(key=lambda x: x[0], reverse=True)
+        matches = matches[:20]
+        _resolve_anilist_posters([anime for _, anime, _ in matches])
+        return [
+            AnimeResult(
+                id=anime.get("info_slug", ""),
+                title=anime.get("info_title", ""),
+                cover=self._get_poster_url(anime.get("info_poster", ""), anime.get("info_malid")),
+                year=year,
+            )
+            for _, anime, year in matches
+        ]
     
     def get_details(self, anime_id: str) -> Optional[AnimeDetails]:
         database = _load_database()
@@ -202,7 +259,9 @@ class AnizleProvider(BaseProvider):
                 episodes=episodes,
                 total_episodes=len(episodes)
             )
-        
+
+        _resolve_anilist_posters([anime_data])
+
         categories = []
         for cat in anime_data.get("categories", []):
             if isinstance(cat, dict) and "tag_title" in cat:
@@ -217,7 +276,7 @@ class AnizleProvider(BaseProvider):
             id=anime_id,
             title=anime_data.get("info_title", ""),
             description=description,
-            cover=self._get_poster_url(anime_data.get("info_poster", "")),
+            cover=self._get_poster_url(anime_data.get("info_poster", ""), anime_data.get("info_malid")),
             genres=categories,
             year=year,
             episodes=episodes,
@@ -315,12 +374,17 @@ class AnizleProvider(BaseProvider):
             return 0.9
         return SequenceMatcher(None, q, t).ratio()
     
-    def _get_poster_url(self, poster: str) -> str:
-        if not poster:
-            return ""
-        if poster.startswith("http"):
-            return poster
-        return f"https://anizm.pro/uploads/img/{poster}"
+    def _get_poster_url(self, poster: str, mal_id: Any = None) -> str:
+        try:
+            cached = _poster_cache.get(int(mal_id or 0), "")
+        except (TypeError, ValueError):
+            cached = ""
+        if cached:
+            return cached
+
+        # Do not return Aniizle's current image host as a fallback: it serves
+        # a Cloudflare 403 HTML page to Qt, yielding a permanently blank card.
+        return poster if poster.startswith("http") else ""
     
     def _get_translators(self, episode_slug: str) -> List[Dict[str, str]]:
         clean_slug = episode_slug.strip('/')

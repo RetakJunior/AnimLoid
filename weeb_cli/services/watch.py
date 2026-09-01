@@ -19,7 +19,13 @@ def get_streams(anime_id: str, episode_id: str, source_name: Optional[str] = Non
                 {
                     "url": s.url,
                     "quality": s.quality,
-                    "server": s.server
+                    "server": s.server,
+                    # Some providers return short-lived HLS links that only
+                    # work with the originating player page as Referer.  The
+                    # old GUI bridge discarded these headers, so a stream
+                    # looked valid in the provider but failed as soon as MPV
+                    # opened it.
+                    "headers": dict(s.headers or {}),
                 }
                 for s in streams
             ]
