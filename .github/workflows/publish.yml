@@ -35,7 +35,6 @@ jobs:
 
   build_binaries:
     name: Build Binaries
-    needs: pypi_publish 
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -91,7 +90,6 @@ jobs:
 
   build_appimage:
     name: Build Linux AppImage
-    needs: pypi_publish
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -118,8 +116,8 @@ jobs:
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
         with:
-          name: binary-AnimLoid-2.7.1-x86_64.AppImage
-          path: dist/AnimLoid-2.7.1-x86_64.AppImage
+          name: binary-AnimLoid-AppImage
+          path: dist/*.AppImage
 
   aur_publish:
     name: Publish to AUR
