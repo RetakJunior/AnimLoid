@@ -15,7 +15,7 @@ setup(
     install_requires=[
         "typer[all]", "rich", "questionary", "requests",
         "packaging", "beautifulsoup4", "lxml", "pycryptodome",
-        "curl_cffi>=0.8.1,<0.9; python_version < '3.9'",
+        "curl_cffi>=0.9,<0.10; python_version < '3.9'",
         "curl_cffi>=0.10,<0.14; python_version >= '3.9' and python_version < '3.10'",
         "curl_cffi>=0.14; python_version >= '3.10'",
         "appdirs", "pyfiglet", "py7zr", "pypresence", "PyQt5>=5.15.0",
