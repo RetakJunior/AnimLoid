@@ -24,7 +24,7 @@ class AnimeCard(QFrame):
         self.thread_pool = thread_pool
         self.setProperty("class", "AnimeCard")
         self.setCursor(QCursor(Qt.PointingHandCursor))
-        self.setFixedSize(170, 275)
+        self.setFixedSize(178, 294)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -32,7 +32,7 @@ class AnimeCard(QFrame):
 
         # Poster Image
         self.poster_label = QLabel()
-        self.poster_label.setFixedSize(154, 210)
+        self.poster_label.setFixedSize(162, 222)
         self.poster_label.setAlignment(Qt.AlignCenter)
         self.poster_label.setStyleSheet("background-color: #17191d; border-radius: 6px; color: #737780;")
         self.poster_label.setText("Yükleniyor...")
@@ -42,7 +42,7 @@ class AnimeCard(QFrame):
         # Title Label
         title = anime_data.get("title") or anime_data.get("name") or "Anime"
         self.title_label = QLabel(title)
-        self.title_label.setStyleSheet("color: #F8FAFC; font-weight: bold; font-size: 12px;")
+        self.title_label.setStyleSheet("color: #F8FAFC; font-weight: 600; font-size: 13px;")
         self.title_label.setWordWrap(True)
         self.title_label.setMaximumHeight(34)
         self.title_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
@@ -76,7 +76,7 @@ class AnimeCard(QFrame):
             self._image_worker = ImageLoaderWorker(cover_url, self.poster_label.size(), parent=self)
             self._image_worker.image_loaded.connect(self._on_image_loaded, Qt.QueuedConnection)
             self._image_worker.image_failed.connect(self._on_image_failed, Qt.QueuedConnection)
-            self._image_worker.start()
+            start_background_worker(self, self._image_worker)
         else:
             self.poster_label.setText("Afiş Yok")
 
@@ -162,7 +162,7 @@ class SearchView(QWidget):
 
         # Status & Loading Bar
         self.status_label = QLabel("Keşfetmek istediğiniz animeyi arayın.")
-        self.status_label.setStyleSheet("color: #94A3B8; font-size: 12px; margin-top: 4px;")
+        self.status_label.setStyleSheet("color: #A8B2C2; font-size: 12px; margin-top: 4px;")
         main_layout.addWidget(self.status_label)
 
         self.loading_bar = QProgressBar()
@@ -209,7 +209,7 @@ class SearchView(QWidget):
                     color: #94A3B8;
                     border: 1px solid #2A2F45;
                     border-radius: 6px;
-                    padding: 2px 8px;
+                    padding: 4px 10px;
                     font-size: 11px;
                 }
                 QPushButton:hover {
@@ -276,13 +276,13 @@ class SearchView(QWidget):
             return
         self.loading_bar.hide()
         self.search_btn.setEnabled(True)
-        self.status_label.setText(f"Hata oluştu: {err_msg}")
+        self.status_label.setText(f"Kaynak yanıt vermedi: {err_msg} Başka bir kaynak seçip yeniden deneyin.")
 
     def _column_count(self):
         # Keep every card visible: the former fixed five-column layout was
         # wider than the content area on ordinary laptop-sized windows.
         available_width = max(1, self.scroll_area.viewport().width())
-        return max(1, (available_width + 16) // 186)
+        return max(1, (available_width + 16) // 194)
 
     def _render_results(self):
         columns = self._column_count()

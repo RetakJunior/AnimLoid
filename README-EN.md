@@ -1,12 +1,16 @@
 <h1 align="center">AnimLoid</h1>
 
 <p align="center">
+  <img src="docs/assets/animloid-avatar.jpeg" alt="AnimLoid artwork" width="180">
+</p>
+
+<p align="center">
   <strong>A powerful, cross-platform command-line tool for anime enthusiasts</strong>
 </p>
 
 <p align="center">
   <a href="https://github.com/RetakJunior/AnimLoid/releases"><img src="https://img.shields.io/github/v/release/RetakJunior/AnimLoid?style=flat-square" alt="Release"></a>
-  <a href="https://github.com/RetakJunior/AnimLoid/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-CC%20BY--NC--ND%204.0-blue?style=flat-square" alt="License"></a>
+  <a href="https://github.com/RetakJunior/AnimLoid/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="License"></a>
   <a href="https://github.com/RetakJunior/AnimLoid/stargazers"><img src="https://img.shields.io/github/stars/RetakJunior/AnimLoid?style=flat-square" alt="Stars"></a>
   <a href="https://github.com/RetakJunior/AnimLoid/actions"><img src="https://img.shields.io/github/actions/workflow/status/RetakJunior/AnimLoid/tests.yml?style=flat-square" alt="Tests"></a>
 </p>
@@ -134,7 +138,7 @@ Config location: `~/.animloid/animloid.db` (SQLite)
 
 ## License
 
-This project is licensed under [CC BY-NC-ND 4.0](LICENSE).
+This project is licensed under [GNU GPL v3.0](LICENSE).
 
 ---
 

@@ -12,6 +12,7 @@ from weeb_cli.providers.base import (
     StreamLink
 )
 from weeb_cli.providers.registry import register_provider
+from weeb_cli.exceptions import ProviderError
 
 try:
     from curl_cffi import requests as curl_requests
@@ -20,7 +21,7 @@ except ImportError:
     import requests as std_requests
     HAS_CURL_CFFI = False
 
-BASE_URL = "https://anizle.org"
+BASE_URL = "https://anizm.pro"
 API_BASE_URL = "https://anizle.org"
 ANIME_LIST_URL = f"{BASE_URL}/getAnimeListForSearch"
 PLAYER_BASE_URL = "https://anizmplayer.com"
@@ -211,6 +212,8 @@ class AnizleProvider(BaseProvider):
     def search(self, query: str) -> List[AnimeResult]:
         database = _load_database()
         if not database:
+            if not _database_loaded:
+                raise ProviderError("Anizle kataloğuna bağlanılamadı.", "PROVIDER_UNAVAILABLE")
             return []
         
         matches = []

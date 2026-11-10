@@ -264,7 +264,7 @@ class DetailView(QWidget):
             self._expected_cover_urls.add(cover_url)
             self._image_worker1 = ImageLoaderWorker(cover_url, self.poster_label.size(), parent=self)
             self._image_worker1.image_loaded.connect(self._on_image_loaded)
-            self._image_worker1.start()
+            start_background_worker(self, self._image_worker1)
 
         # Fetch details
         slug = anime_data.get("slug") or anime_data.get("id")

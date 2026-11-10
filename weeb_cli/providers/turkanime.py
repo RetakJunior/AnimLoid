@@ -15,6 +15,7 @@ from weeb_cli.providers.base import (
     StreamLink
 )
 from weeb_cli.providers.registry import register_provider
+from weeb_cli.exceptions import ProviderError
 
 try:
     from curl_cffi import requests as curl_requests
@@ -321,6 +322,10 @@ class TurkAnimeProvider(BaseProvider):
         # ``data-src`` posters), works for translated titles such as Attack on
         # Titan, and avoids blocking a background request on a huge page.
         html = _fetch(f"/arama?arama={quote_plus(q)}")
+        if not html and not results:
+            raise ProviderError("TurkAnime arama sayfasına bağlanılamadı.", "PROVIDER_UNAVAILABLE")
+        if 'window.location.href="/lander' in html and not results:
+            raise ProviderError("TurkAnime arama sayfası geçici yönlendirme yanıtı verdi.", "PROVIDER_UNAVAILABLE")
         if html:
             # The page also contains the site's "currently airing" carousel.
             # Only parse cards after the search-results heading; otherwise

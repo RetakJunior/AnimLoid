@@ -24,8 +24,8 @@ def main():
         app()
     else:
         # Default to modern GUI
-        print("🚀 AnimLoid (v2.7.0) başlatılıyor... (Grafik Arayüz açılıyor)")
-        print("💡 İpucu: Terminalden çalıştırmak isterseniz: ./AnimLoid-2.7.0-x86_64.AppImage --cli")
+        print("🚀 AnimLoid (v2.7.3) başlatılıyor... (Grafik Arayüz açılıyor)")
+        print("💡 İpucu: Terminalden çalıştırmak isterseniz: ./AnimLoid-2.7.3-x86_64.AppImage --cli")
         try:
             from weeb_cli.gui.app import run_gui
             run_gui()

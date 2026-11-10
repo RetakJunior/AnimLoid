@@ -220,14 +220,14 @@ QFrame.Card:hover {
 }
 
 QFrame.AnimeCard {
-    background-color: #121316;
-    border: 1px solid #292b30;
-    border-radius: 8px;
+    background-color: #12151b;
+    border: 1px solid #2a2e37;
+    border-radius: 10px;
 }
 
 QFrame.AnimeCard:hover {
-    border: 1px solid #3b82f6;
-    background-color: #17191d;
+    border: 1px solid #60a5fa;
+    background-color: #191e28;
 }
 
 /* ScrollBars */

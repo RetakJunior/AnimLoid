@@ -12,6 +12,7 @@ from weeb_cli.providers.base import (
     StreamLink
 )
 from weeb_cli.providers.registry import register_provider
+from weeb_cli.exceptions import ProviderError
 
 API_URL = "https://api.allanime.day/api"
 REFERER = "https://allmanga.to"
@@ -121,7 +122,9 @@ class AllAnimeProvider(BaseProvider):
         }
         
         data = _graphql_request(gql, variables)
-        if not data or 'data' not in data:
+        if data is None:
+            raise ProviderError("AllAnime API yanıt vermiyor veya erişimi engelliyor.", "PROVIDER_UNAVAILABLE")
+        if 'data' not in data:
             return []
         
         shows = data.get('data', {}).get('shows', {}).get('edges', [])

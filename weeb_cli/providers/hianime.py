@@ -14,6 +14,7 @@ from weeb_cli.providers.base import (
 )
 from weeb_cli.providers.registry import register_provider
 from weeb_cli.providers.extractors.megacloud import extract_stream
+from weeb_cli.exceptions import ProviderError
 
 BASE_URL = "https://hianime.to"
 AJAX_URL = f"{BASE_URL}/ajax/v2"
@@ -77,7 +78,7 @@ class HiAnimeProvider(BaseProvider):
         html = _get_html(url, self.headers)
         
         if not html:
-            return []
+            raise ProviderError("HiAnime arama servisine bağlanılamadı.", "PROVIDER_UNAVAILABLE")
         
         soup = BeautifulSoup(html, 'html.parser')
         results = []

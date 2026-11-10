@@ -39,7 +39,7 @@ class Scraper:
         try:
             return self.provider.search(query)
         except ProviderError as e:
-            self.last_error = e.code
+            self.last_error = e.message or e.code
             return []
         except Exception as e:
             self.last_error = str(e)
@@ -52,7 +52,7 @@ class Scraper:
         try:
             return self.provider.get_details(anime_id)
         except ProviderError as e:
-            self.last_error = e.code
+            self.last_error = e.message or e.code
             return None
         except Exception as e:
             self.last_error = str(e)
@@ -65,7 +65,7 @@ class Scraper:
         try:
             return self.provider.get_episodes(anime_id)
         except ProviderError as e:
-            self.last_error = e.code
+            self.last_error = e.message or e.code
             return []
         except Exception as e:
             self.last_error = str(e)
@@ -88,7 +88,7 @@ class Scraper:
             debug(f"[SCRAPER] Provider returned {len(result) if result else 0} streams")
             return result
         except ProviderError as e:
-            self.last_error = e.code
+            self.last_error = e.message or e.code
             error(f"[SCRAPER] ProviderError: {e.code} - {e.message}")
             return []
         except Exception as e:

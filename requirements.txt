@@ -6,7 +6,9 @@ packaging
 beautifulsoup4
 lxml
 pycryptodome
-curl_cffi
+curl_cffi>=0.8.1,<0.9; python_version < "3.9"
+curl_cffi>=0.10,<0.14; python_version >= "3.9" and python_version < "3.10"
+curl_cffi>=0.14; python_version >= "3.10"
 appdirs
 prompt_toolkit>=3.0.36,<3.0.50
 build

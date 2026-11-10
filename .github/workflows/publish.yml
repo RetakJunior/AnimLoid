@@ -1,4 +1,4 @@
-name: Publish Release
+name: Publish AnimLoid Release
 
 on:
   push:
@@ -6,161 +6,68 @@ on:
       - 'v*.*.*'
 
 jobs:
-  pypi_publish:
-    name: Upload release to PyPI
+  publish_pypi:
+    name: Build and publish to PyPI
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/animloid
     permissions:
-      id-token: write  
+      id-token: write
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-          
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build
-          
-      - name: Build package
-        run: python -m build
-        
-      - name: Publish package distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-
-  build_binaries:
-    name: Build Binaries
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            arch: x64
-            artifact_name: weeb-cli-Linux-x86_64
-            binary_name: weeb-cli
-          - os: windows-latest
-            arch: x64
-            artifact_name: weeb-cli-Windows-x86_64.exe
-            binary_name: weeb-cli.exe
-          - os: windows-latest
-            arch: x86
-            artifact_name: weeb-cli-Windows-x86.exe
-            binary_name: weeb-cli.exe
-          - os: macos-15 # Intel 
-            arch: x64
-            artifact_name: weeb-cli-macOS-x86_64
-            binary_name: weeb-cli
-          - os: macos-latest # ARM 
-            arch: arm64
-            artifact_name: weeb-cli-macOS-arm64
-            binary_name: weeb-cli
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          architecture: ${{ matrix.arch }} 
-          
-      - name: Install dependencies
+      - name: Build distributions
         run: |
-          python -m pip install --upgrade pip
-          pip install . pyinstaller
-          
-      - name: Build with PyInstaller
-        run: |
-          pyinstaller --name weeb-cli --onefile --clean --noconfirm --icon weeb_landing/logo/favicon.ico weeb_cli/__main__.py --collect-all weeb_cli --collect-all rich --collect-all questionary --collect-all typer
-        
-      - name: Rename Binary
-        shell: bash
-        run: |
-          mv dist/${{ matrix.binary_name }} dist/${{ matrix.artifact_name }}
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: binary-${{ matrix.artifact_name }}
-          path: dist/${{ matrix.artifact_name }}
+          python -m pip install --upgrade pip build
+          python -m build
+      - name: Publish package distributions
+        uses: pypa/gh-action-pypi-publish@release/v1
 
   build_appimage:
     name: Build Linux AppImage
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Install build tools
         run: |
           sudo apt-get update
           sudo apt-get install -y libfuse2
           python -m pip install --upgrade pip
           python -m pip install . pyinstaller
-          curl -L -o /tmp/appimagetool.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          curl -L --fail -o /tmp/appimagetool.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x /tmp/appimagetool.AppImage
           sudo ln -s /tmp/appimagetool.AppImage /usr/local/bin/appimagetool
-
       - name: Build AppImage
         run: |
           chmod +x packaging/linux/build-appimage.sh
           packaging/linux/build-appimage.sh dist
-
-      - name: Upload AppImage
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: binary-AnimLoid-AppImage
-          path: dist/*.AppImage
+          name: animloid-appimage
+          path: dist/AnimLoid-*.AppImage
+          if-no-files-found: error
 
-  aur_publish:
-    name: Publish to AUR
-    needs: pypi_publish
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Update PKGBUILD version
-        run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          sed -i "s/pkgver=0.0.0/pkgver=$VERSION/" distribution/aur/PKGBUILD
-          
-      - name: Publish to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
-        with:
-          pkgname: weeb-cli
-          pkgbuild: ./distribution/aur/PKGBUILD
-          commit_username: ${{ secrets.AUR_USERNAME }}
-          commit_email: ${{ secrets.AUR_EMAIL }}
-          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: Update to ${{ github.ref_name }}
-          force_push: true
-
-  release:
-    name: Create GitHub Release
-    needs: [build_binaries, build_appimage]
+  create_release:
+    name: Attach AppImage to GitHub Release
+    needs: build_appimage
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Download Artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          path: artifacts
-          pattern: binary-*
-          merge-multiple: true
-          
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+          name: animloid-appimage
+          path: dist
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/*
+          name: AnimLoid ${{ github.ref_name }}
+          files: dist/AnimLoid-*.AppImage
           generate_release_notes: true

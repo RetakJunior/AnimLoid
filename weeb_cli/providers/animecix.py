@@ -12,6 +12,7 @@ from weeb_cli.providers.base import (
     StreamLink
 )
 from weeb_cli.providers.registry import register_provider
+from weeb_cli.exceptions import ProviderError
 
 BASE_URL = "https://animecix.tv/"
 ALT_URL = "https://mangacix.net/"
@@ -66,7 +67,9 @@ class AnimeCixProvider(BaseProvider):
         url = f"{BASE_URL}secure/search/{q_enc}?type=&limit=20"
         
         data = _get_json(url)
-        if not data or "results" not in data:
+        if data is None:
+            raise ProviderError("AnimeCix arama servisine bağlanılamadı.", "PROVIDER_UNAVAILABLE")
+        if "results" not in data:
             return []
         
         results = []
