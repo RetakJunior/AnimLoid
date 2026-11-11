@@ -1,20 +1,20 @@
 """Detail View for AnimLoid GUI."""
 
-import os
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QScrollArea, QFrame, QListWidget, QListWidgetItem, 
     QDialog, QComboBox, QMessageBox, QProgressBar
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QThreadPool, QSize
-from PyQt5.QtGui import QPixmap, QCursor, QFont
+from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QPixmap, QCursor
 
 from weeb_cli.config import config
+from weeb_cli.services.scraper import scraper
 from weeb_cli.services.progress import progress_tracker
 from weeb_cli.services.downloader import queue_manager
 from weeb_cli.gui.workers import (
-    DetailsWorker, StreamsWorker, PlayWorker, ImageLoaderWorker,
-    start_background_worker,
+    DetailsWorker, StreamsWorker, PlayWorker, ImageLoaderWorker, SearchWorker,
+    start_background_worker, start_image_worker,
 )
 
 
@@ -132,13 +132,15 @@ class DetailView(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.thread_pool = QThreadPool.globalInstance()
         self.current_anime = None
         self.details_data = None
         self.details_worker = None
         self.streams_worker = None
         self.play_worker = None
-        self._expected_cover_urls = set()
+        self.alternate_worker = None
+        self.current_source = config.get("scraping_source", "animecix")
+        self._pending_source = None
+        self._expected_cover_url = None
         self.init_ui()
 
     def init_ui(self):
@@ -191,7 +193,6 @@ class DetailView(QWidget):
         self.poster_label.setAlignment(Qt.AlignCenter)
         self.poster_label.setStyleSheet("background-color: #17191d; border-radius: 6px; color: #737780;")
         self.poster_label.setText("Yükleniyor...")
-        self.poster_label.setScaledContents(True)
         header_card_layout.addWidget(self.poster_label)
 
         # Info Section
@@ -225,6 +226,22 @@ class DetailView(QWidget):
         ep_header.addWidget(self.episodes_count_label)
         ep_header.addStretch()
 
+        source_label = QLabel("Kaynak")
+        source_label.setStyleSheet("color: #94A3B8; font-size: 12px;")
+        ep_header.addWidget(source_label)
+        self.source_combo = QComboBox()
+        self.source_combo.setMinimumWidth(150)
+        for provider in scraper.get_available_sources():
+            flag = "🇹🇷" if provider.get("lang") == "tr" else "🌐"
+            self.source_combo.addItem(f"{flag} {provider['name'].capitalize()}", provider["name"])
+        ep_header.addWidget(self.source_combo)
+
+        self.retry_button = QPushButton("↻ Yeniden yükle")
+        self.retry_button.setProperty("class", "SecondaryButton")
+        self.retry_button.setCursor(QCursor(Qt.PointingHandCursor))
+        self.retry_button.clicked.connect(self._retry_current_anime)
+        ep_header.addWidget(self.retry_button)
+
         self.content_layout.addLayout(ep_header)
 
         # Episodes Container
@@ -235,16 +252,25 @@ class DetailView(QWidget):
         self.scroll_area.setWidget(self.content_widget)
         main_layout.addWidget(self.scroll_area, stretch=1)
 
-    def load_anime(self, anime_data: dict):
+    def load_anime(self, anime_data: dict, source_name: str = None):
+        # Ignore a slower source-switch search if the user opened another title.
+        self.alternate_worker = None
+        self._pending_source = None
         self.current_anime = anime_data
+        self.current_source = source_name or anime_data.get("source") or config.get("scraping_source", "animecix")
+        config.set("scraping_source", self.current_source)
+        source_index = self.source_combo.findData(self.current_source)
+        if source_index >= 0:
+            self.source_combo.setCurrentIndex(source_index)
         self.details_data = None
-        self._expected_cover_urls.clear()
+        self._expected_cover_url = None
         title = anime_data.get("title") or anime_data.get("name") or "Anime"
         self.title_label.setText(title)
         self.header_title.setText(title)
         self.desc_label.setText("Detaylar yükleniyor...")
         self.poster_label.setText("Yükleniyor...")
         self.loading_bar.show()
+        self.episodes_count_label.setText("Bölümler yükleniyor…")
 
         # Clear tags
         while self.tags_layout.count():
@@ -261,14 +287,17 @@ class DetailView(QWidget):
         # Load cover immediately if available
         cover_url = anime_data.get("cover")
         if cover_url:
-            self._expected_cover_urls.add(cover_url)
+            self._expected_cover_url = cover_url
             self._image_worker1 = ImageLoaderWorker(cover_url, self.poster_label.size(), parent=self)
-            self._image_worker1.image_loaded.connect(self._on_image_loaded)
-            start_background_worker(self, self._image_worker1)
+            self._image_worker1.signals.image_loaded.connect(self._on_image_loaded, Qt.QueuedConnection)
+            self._image_worker1.signals.image_failed.connect(self._on_image_failed, Qt.QueuedConnection)
+            start_image_worker(self._image_worker1)
+        else:
+            self.poster_label.setText("Afiş bulunamadı")
 
         # Fetch details
         slug = anime_data.get("slug") or anime_data.get("id")
-        source = config.get("scraping_source", "animecix")
+        source = self.current_source
 
         self.details_worker = DetailsWorker(slug, source)
         self.details_worker.details_ready.connect(self._on_details_ready, Qt.QueuedConnection)
@@ -276,10 +305,81 @@ class DetailView(QWidget):
         start_background_worker(self, self.details_worker)
 
     def _on_image_loaded(self, url, image):
-        if url not in self._expected_cover_urls:
+        if url != self._expected_cover_url:
             return
         if not image.isNull():
             self.poster_label.setPixmap(QPixmap.fromImage(image))
+
+    def _on_image_failed(self, url):
+        if url == self._expected_cover_url:
+            self.poster_label.setText("Afiş yüklenemedi")
+
+    def _retry_current_anime(self):
+        if not self.current_anime:
+            return
+        source = self.source_combo.currentData() or self.current_source
+        if source != self.current_source:
+            self._search_in_alternate_source(source)
+            return
+        self.load_anime(self.current_anime, source)
+
+    def _search_in_alternate_source(self, source):
+        title = self.current_anime.get("title") or self.current_anime.get("name") or ""
+        if not title:
+            return
+        self._pending_source = source
+        self.loading_bar.show()
+        self.desc_label.setText(f"{source.capitalize()} kaynağında aranıyor…")
+        self.episodes_count_label.setText("Kaynak değiştiriliyor…")
+        while self.episodes_container.count():
+            item = self.episodes_container.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.alternate_worker = SearchWorker(title, source)
+        self.alternate_worker.results_ready.connect(self._on_alternate_results, Qt.QueuedConnection)
+        self.alternate_worker.error_occurred.connect(self._on_alternate_error, Qt.QueuedConnection)
+        start_background_worker(self, self.alternate_worker)
+
+    def _on_alternate_results(self, results):
+        if self.sender() is not self.alternate_worker:
+            return
+        self.loading_bar.hide()
+        if not results:
+            source = self._pending_source or self.current_source
+            self._show_alternate_error(f"{source.capitalize()} kaynağında bu anime bulunamadı.")
+            return
+        anime = next((item for item in results if item.get("playable") is True), None)
+        if anime is None:
+            anime = next((item for item in results if item.get("playable") is not False), None)
+        if anime is None:
+            source = self._pending_source or self.current_source
+            self._show_alternate_error(f"{source.capitalize()} kaynağında izlenebilir bölüm bulunamadı.")
+            return
+        source = self._pending_source or self.current_source
+        self._pending_source = None
+        anime["source"] = source
+        self.load_anime(anime, source)
+
+    def _on_alternate_error(self, message):
+        if self.sender() is not self.alternate_worker:
+            return
+        self._show_alternate_error(message)
+
+    def _show_alternate_error(self, message):
+        self._pending_source = None
+        source_index = self.source_combo.findData(self.current_source)
+        if source_index >= 0:
+            self.source_combo.setCurrentIndex(source_index)
+        self.loading_bar.hide()
+        self.episodes_count_label.setText("Kaynak yanıt vermedi")
+        unavailable = QLabel(f"{message}\nFarklı bir kaynak seçip yeniden deneyebilirsin.")
+        unavailable.setWordWrap(True)
+        unavailable.setObjectName("EpisodeNotice")
+        while self.episodes_container.count():
+            item = self.episodes_container.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.episodes_container.addWidget(unavailable)
 
     def _on_details_ready(self, details: dict):
         if self.sender() is not self.details_worker:
@@ -319,11 +419,12 @@ class DetailView(QWidget):
 
         # Update cover if details had a better one
         cover_url = details.get("cover")
-        if cover_url:
-            self._expected_cover_urls.add(cover_url)
+        if cover_url and cover_url != self._expected_cover_url:
+            self._expected_cover_url = cover_url
             self._image_worker2 = ImageLoaderWorker(cover_url, self.poster_label.size(), parent=self)
-            self._image_worker2.image_loaded.connect(self._on_image_loaded)
-            self._image_worker2.start()
+            self._image_worker2.signals.image_loaded.connect(self._on_image_loaded, Qt.QueuedConnection)
+            self._image_worker2.signals.image_failed.connect(self._on_image_failed, Qt.QueuedConnection)
+            start_image_worker(self._image_worker2)
 
         # Episodes
         episodes = details.get("episodes", [])
@@ -331,11 +432,11 @@ class DetailView(QWidget):
 
         if not episodes:
             unavailable = QLabel(
-                "Bu içerik için seçili kaynakta izlenebilir yayın bulunamadı. "
-                "Arama ekranından başka bir kaynak deneyebilirsiniz."
+                "Bu kaynakta bölüm bulunamadı ya da kaynak şu anda yanıt vermiyor. "
+                "Yukarıdan başka bir kaynak seçip Yeniden yükle'ye bas."
             )
             unavailable.setWordWrap(True)
-            unavailable.setStyleSheet("color: #9ca3af; padding: 12px 4px;")
+            unavailable.setObjectName("EpisodeNotice")
             self.episodes_container.addWidget(unavailable)
             return
 
@@ -356,6 +457,13 @@ class DetailView(QWidget):
             return
         self.loading_bar.hide()
         self.desc_label.setText(f"Hata: {err_msg}")
+        self.episodes_count_label.setText("Bölümler yüklenemedi")
+        unavailable = QLabel(
+            f"{err_msg}\nBiraz sonra yeniden deneyebilir veya başka bir kaynak seçebilirsin."
+        )
+        unavailable.setWordWrap(True)
+        unavailable.setObjectName("EpisodeNotice")
+        self.episodes_container.addWidget(unavailable)
 
     def _on_play_requested(self, episode_data: dict):
         if not self.details_data:
@@ -364,7 +472,7 @@ class DetailView(QWidget):
         ep_id = episode_data.get("id")
         
         self.loading_bar.show()
-        source = config.get("scraping_source", "animecix")
+        source = self.current_source
 
         self.streams_worker = StreamsWorker(anime_id, ep_id, source)
         self.streams_worker.streams_ready.connect(self._on_streams_ready, Qt.QueuedConnection)

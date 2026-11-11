@@ -13,10 +13,12 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
     QStackedWidget, QPushButton, QLabel, QFrame, QStatusBar, QButtonGroup
 )
-from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QIcon, QPixmap, QFont, QCursor
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIcon, QCursor
 
+from weeb_cli.config import config
 from weeb_cli.gui.styles import DARK_THEME_QSS
+from weeb_cli.gui.views.home_view import HomeView
 from weeb_cli.gui.views.search_view import SearchView
 from weeb_cli.gui.views.detail_view import DetailView
 from weeb_cli.gui.views.history_view import HistoryView
@@ -42,6 +44,8 @@ class AnimLoidApp(QMainWindow):
         self.main_layout.setSpacing(0)
 
         # Create Sidebar and Content Stack
+        self.nav_buttons = {}
+        self._last_page_index = 0
         self._create_sidebar()
         self._create_content_stack()
 
@@ -88,7 +92,7 @@ class AnimLoidApp(QMainWindow):
         app_title.setObjectName("LogoTitle")
         title_box.addWidget(app_title)
 
-        app_sub = QLabel("v2.7.3 • Anime izle ve indir")
+        app_sub = QLabel("v2.7.4 • Anime izle")
         app_sub.setObjectName("LogoSubtitle")
         title_box.addWidget(app_sub)
 
@@ -99,11 +103,13 @@ class AnimLoidApp(QMainWindow):
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
 
-        self.btn_search = self._create_nav_btn("🔍  Anime Ara", 0)
-        self.btn_history = self._create_nav_btn("🕒  İzlediklerim", 2)
-        self.btn_downloads = self._create_nav_btn("📥  İndirmeler", 3)
-        self.btn_settings = self._create_nav_btn("⚙️  Ayarlar", 4)
+        self.btn_home = self._create_nav_btn("⌂  Ana Sayfa", 0)
+        self.btn_search = self._create_nav_btn("⌕  Anime Ara", 1)
+        self.btn_history = self._create_nav_btn("◷  İzlediklerim", 3)
+        self.btn_downloads = self._create_nav_btn("⇩  İndirmeler", 4)
+        self.btn_settings = self._create_nav_btn("⚙  Ayarlar", 5)
 
+        sidebar_layout.addWidget(self.btn_home)
         sidebar_layout.addWidget(self.btn_search)
         sidebar_layout.addWidget(self.btn_history)
         sidebar_layout.addWidget(self.btn_downloads)
@@ -129,7 +135,7 @@ class AnimLoidApp(QMainWindow):
         info_t.setStyleSheet("color: #FFFFFF; font-size: 11px; font-weight: bold;")
         info_layout.addWidget(info_t)
 
-        info_d = QLabel("Hızlı yayın & indirme desteği")
+        info_d = QLabel("Yayın ve indirme")
         info_d.setStyleSheet("color: #64748B; font-size: 10px;")
         info_layout.addWidget(info_d)
 
@@ -144,6 +150,7 @@ class AnimLoidApp(QMainWindow):
         btn.setCursor(QCursor(Qt.PointingHandCursor))
         btn.clicked.connect(lambda: self._switch_page(page_idx))
         self.nav_group.addButton(btn)
+        self.nav_buttons[page_idx] = btn
         if page_idx == 0:
             btn.setChecked(True)
         return btn
@@ -151,27 +158,32 @@ class AnimLoidApp(QMainWindow):
     def _create_content_stack(self):
         self.stack = QStackedWidget()
 
-        # 0: Search View
+        # 0: Home / discovery
+        self.home_view = HomeView()
+        self.home_view.search_requested.connect(self._on_home_search)
+        self.stack.addWidget(self.home_view)
+
+        # 1: Search View
         self.search_view = SearchView()
         self.search_view.anime_selected.connect(self._open_anime_detail)
         self.stack.addWidget(self.search_view)
 
-        # 1: Detail View
+        # 2: Detail View
         self.detail_view = DetailView()
         self.detail_view.back_clicked.connect(self._on_detail_back)
         self.detail_view.episode_watched.connect(self._on_episode_watched)
         self.stack.addWidget(self.detail_view)
 
-        # 2: History View
+        # 3: History View
         self.history_view = HistoryView()
         self.history_view.anime_selected.connect(self._open_anime_detail)
         self.stack.addWidget(self.history_view)
 
-        # 3: Downloads View
+        # 4: Downloads View
         self.downloads_view = DownloadsView()
         self.stack.addWidget(self.downloads_view)
 
-        # 4: Settings View
+        # 5: Settings View
         self.settings_view = SettingsView()
         self.stack.addWidget(self.settings_view)
 
@@ -179,19 +191,41 @@ class AnimLoidApp(QMainWindow):
 
     def _switch_page(self, page_idx: int):
         self.stack.setCurrentIndex(page_idx)
-        if page_idx == 2:
-            self.history_view.refresh_history()
+        if page_idx == 0:
+            self.home_view._refresh_continue_watching()
+            self.home_view.refresh_recommendations(force_refresh=False)
         elif page_idx == 3:
+            self.history_view.refresh_history()
+        elif page_idx == 4:
             self.downloads_view.refresh_queue()
 
     def _open_anime_detail(self, anime_data: dict):
-        self.detail_view.load_anime(anime_data)
+        current_index = self.stack.currentIndex()
+        if current_index != 2:
+            self._last_page_index = current_index
+        source = anime_data.get("source") or config.get("scraping_source", "animecix")
+        self.detail_view.load_anime(anime_data, source)
+        self.stack.setCurrentIndex(2)
+
+    def _on_home_search(self, title: str):
+        self._sync_search_source()
+        self.btn_search.setChecked(True)
         self.stack.setCurrentIndex(1)
+        self.search_view.search_title(title)
+
+    def _sync_search_source(self):
+        source = config.get("scraping_source", "animecix")
+        source_index = self.search_view.source_combo.findData(source)
+        if source_index >= 0:
+            self.search_view.source_combo.setCurrentIndex(source_index)
 
     def _on_detail_back(self):
-        # Return to search or history depending on previous page
-        self.btn_search.setChecked(True)
-        self.stack.setCurrentIndex(0)
+        # Return to the screen that opened the selected anime.
+        self._sync_search_source()
+        self.stack.setCurrentIndex(self._last_page_index)
+        button = self.nav_buttons.get(self._last_page_index)
+        if button:
+            button.setChecked(True)
 
     def _on_episode_watched(self, slug: str, ep_num: int):
         self.status_bar.showMessage(f"Bölüm {ep_num} izleme listesine kaydedildi.", 4000)

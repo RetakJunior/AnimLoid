@@ -1,7 +1,9 @@
 import json
 import time
+import threading
 import urllib.request
 from urllib.parse import urlparse, parse_qs, quote, urlsplit, urlunsplit
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional
 
 from weeb_cli.providers.base import (
@@ -22,6 +24,10 @@ VIDEO_PLAYERS = ["tau-video.xyz", "sibnet"]
 # even return a different title), so retain this small in-process lookup for
 # the detail request that immediately follows a search result click.
 _SEARCH_METADATA = {}
+_EPISODE_CACHE = {}
+_EPISODE_CACHE_LOCK = threading.Lock()
+_EPISODE_CACHE_SECONDS = 5 * 60
+_EPISODE_CACHE_LIMIT = 128
 
 HEADERS = {
     "Accept": "application/json",
@@ -96,17 +102,18 @@ class AnimeCixProvider(BaseProvider):
             safe_id = int(anime_id)
         except (ValueError, TypeError):
             return None
-        
-        url = f"{ALT_URL}secure/related-videos?episode=1&season=1&titleId={safe_id}&videoId=637113"
-        data = _get_json(url)
-        
         title_data = _SEARCH_METADATA.get(str(safe_id))
+        cached_episodes = self._cached_episodes(safe_id)
+        data = None
+        if cached_episodes is None or not title_data:
+            url = f"{ALT_URL}secure/related-videos?episode=1&season=1&titleId={safe_id}&videoId=637113"
+            data = _get_json(url)
         if data and "videos" in data:
             videos = data.get("videos") or []
             if videos and not title_data:
                 title_data = videos[0].get("title")
         
-        episodes = self.get_episodes(anime_id)
+        episodes = cached_episodes if cached_episodes is not None else self._get_episodes_from_data(safe_id, data)
         
         if not title_data:
             return AnimeDetails(
@@ -132,41 +139,80 @@ class AnimeCixProvider(BaseProvider):
             safe_id = int(anime_id)
         except (ValueError, TypeError):
             return []
+
+        cached = self._cached_episodes(safe_id)
+        if cached is not None:
+            return cached
         
-        seasons = self._get_seasons(safe_id)
+        first_url = f"{ALT_URL}secure/related-videos?episode=1&season=1&titleId={safe_id}&videoId=637113"
+        return self._get_episodes_from_data(safe_id, _get_json(first_url))
+
+    @staticmethod
+    def _cached_episodes(title_id: int) -> Optional[List[Episode]]:
+        with _EPISODE_CACHE_LOCK:
+            cached = _EPISODE_CACHE.get(str(title_id))
+            if cached and time.monotonic() - cached[0] < _EPISODE_CACHE_SECONDS:
+                return list(cached[1])
+        return None
+
+    def _get_episodes_from_data(self, title_id: int, first_data) -> List[Episode]:
+        cache_key = str(title_id)
+        now = time.monotonic()
+        cached = self._cached_episodes(title_id)
+        if cached is not None:
+            return cached
+
+        seasons = self._get_seasons_from_data(first_data)
         if not seasons:
             seasons = [0]
-        
+
+        payloads = {0: first_data}
+        other_seasons = seasons[1:]
+        if other_seasons:
+            def fetch_season(sidx):
+                url = f"{ALT_URL}secure/related-videos?episode=1&season={sidx+1}&titleId={title_id}&videoId=637113"
+                return sidx, _get_json(url)
+
+            with ThreadPoolExecutor(max_workers=min(4, len(other_seasons))) as pool:
+                for sidx, data in pool.map(fetch_season, other_seasons):
+                    payloads[sidx] = data
+
         episodes = []
         seen = set()
-        
         for sidx in seasons:
-            url = f"{ALT_URL}secure/related-videos?episode=1&season={sidx+1}&titleId={safe_id}&videoId=637113"
-            data = _get_json(url)
-            
+            data = payloads.get(sidx)
             if not data or "videos" not in data:
                 continue
-            
-            for v in data["videos"]:
-                name = v.get("name")
-                ep_url = v.get("url")
-                
-                if not name or not ep_url:
+            for video in data.get("videos") or []:
+                name = video.get("name")
+                episode_url = video.get("url")
+                if not name or not episode_url or episode_url in seen:
                     continue
-                if name in seen:
-                    continue
-                
-                seen.add(name)
-                ep_num = self._parse_episode_number(name, len(episodes) + 1)
-                
+                seen.add(episode_url)
                 episodes.append(Episode(
-                    id=ep_url,
-                    number=ep_num,
+                    id=episode_url,
+                    number=self._parse_episode_number(name, len(episodes) + 1),
                     title=name,
                     season=sidx + 1,
-                    url=ep_url
+                    url=episode_url,
                 ))
-        
+
+        episodes.sort(key=lambda episode: (episode.season, episode.number))
+        complete = (
+            isinstance(first_data, dict)
+            and "videos" in first_data
+            and all(
+                isinstance(payloads.get(season_index), dict)
+                and "videos" in payloads[season_index]
+                for season_index in seasons
+            )
+        )
+        if complete:
+            with _EPISODE_CACHE_LOCK:
+                _EPISODE_CACHE[cache_key] = (now, list(episodes))
+                if len(_EPISODE_CACHE) > _EPISODE_CACHE_LIMIT:
+                    oldest_key = min(_EPISODE_CACHE, key=lambda key: _EPISODE_CACHE[key][0])
+                    _EPISODE_CACHE.pop(oldest_key, None)
         return episodes
     
     def get_streams(self, anime_id: str, episode_id: str) -> List[StreamLink]:
@@ -234,8 +280,10 @@ class AnimeCixProvider(BaseProvider):
             return [0]
         
         url = f"{ALT_URL}secure/related-videos?episode=1&season=1&titleId={safe_id}&videoId=637113"
-        data = _get_json(url)
-        
+        return self._get_seasons_from_data(_get_json(url))
+
+    @staticmethod
+    def _get_seasons_from_data(data) -> List[int]:
         if not data or "videos" not in data:
             return [0]
         
@@ -244,6 +292,8 @@ class AnimeCixProvider(BaseProvider):
             return [0]
         
         title = (videos[0] or {}).get("title") or {}
+        if not isinstance(title, dict):
+            return [0]
         seasons = title.get("seasons") or []
         
         if seasons:

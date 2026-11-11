@@ -38,6 +38,46 @@ QLabel#LogoSubtitle {
     padding-left: 5px;
 }
 
+QLabel#HomeTitle {
+    color: #FFFFFF;
+    font-size: 24px;
+    font-weight: 750;
+}
+
+QLabel#HomeSubtitle {
+    color: #94A3B8;
+    font-size: 12px;
+}
+
+QLabel#SectionTitle {
+    color: #F8FAFC;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+QPushButton#ContinueButton {
+    text-align: left;
+    color: #E2E8F0;
+    background-color: #151922;
+    border: 1px solid #2B3342;
+    border-radius: 9px;
+    padding: 8px 12px;
+    font-size: 12px;
+}
+
+QPushButton#ContinueButton:hover {
+    background-color: #1C2432;
+    border-color: #4B83E6;
+}
+
+QLabel#EpisodeNotice {
+    color: #CBD5E1;
+    background-color: #17191D;
+    border: 1px solid #303238;
+    border-radius: 8px;
+    padding: 14px;
+}
+
 /* Nav Buttons */
 QPushButton.NavButton {
     background-color: transparent;

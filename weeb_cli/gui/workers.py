@@ -1,14 +1,16 @@
 """Asynchronous workers and background threads for AnimLoid GUI."""
 
-import os
 import threading
+import time
+from collections import OrderedDict
+from urllib.parse import urlsplit, urlunsplit
+from PyQt5.QtCore import QRunnable, QThreadPool
 from PyQt5.QtCore import QThread, pyqtSignal, QObject, QSize, Qt
 from PyQt5.QtGui import QImage
 
-from weeb_cli.config import config
-from weeb_cli.providers import get_provider
-from weeb_cli.services.details import get_details
-from weeb_cli.services.watch import get_streams
+from weeb_cli.services.details import serialize_details
+from weeb_cli.services.scraper import Scraper
+from weeb_cli.services.recommendations import get_recommendations
 from weeb_cli.services.player import player
 from weeb_cli.services.dependency_manager import dependency_manager
 from weeb_cli.services.downloader import queue_manager
@@ -16,9 +18,37 @@ from weeb_cli.services.downloader import queue_manager
 # QPixmap is a GUI-only resource in Qt.  Keep decoded images as QImage here,
 # because QImage may safely be created and resized in a worker thread.  The
 # view turns it into a QPixmap only after the signal reaches the GUI thread.
-_IMAGE_CACHE: dict = {}
+_IMAGE_CACHE = OrderedDict()
 _IMAGE_CACHE_LOCK = threading.Lock()
+_IMAGE_CACHE_LIMIT = 256
+_IMAGE_POOL = QThreadPool()
+_IMAGE_POOL.setMaxThreadCount(5)
+_ACTIVE_IMAGE_WORKERS = set()
 _LIVE_WORKERS = set()
+
+
+class _ImageSignals(QObject):
+    image_loaded = pyqtSignal(str, QImage)
+    image_failed = pyqtSignal(str)
+    finished = pyqtSignal(object)
+
+
+class _ImageWorkerReaper(QObject):
+    def release(self, worker):
+        with _IMAGE_CACHE_LOCK:
+            _ACTIVE_IMAGE_WORKERS.discard(worker)
+
+
+_IMAGE_WORKER_REAPER = _ImageWorkerReaper()
+
+
+def start_image_worker(worker):
+    """Run image requests in a small shared pool, not one thread per card."""
+    with _IMAGE_CACHE_LOCK:
+        _ACTIVE_IMAGE_WORKERS.add(worker)
+    worker.signals.finished.connect(_IMAGE_WORKER_REAPER.release, Qt.QueuedConnection)
+    _IMAGE_POOL.start(worker)
+    return worker
 
 
 def start_background_worker(owner, worker):
@@ -55,63 +85,99 @@ def start_background_worker(owner, worker):
     return worker
 
 
-class ImageLoaderWorker(QThread):
-    """Download and decode poster images away from Qt's TLS stack."""
-    image_loaded = pyqtSignal(str, QImage)
-    image_failed = pyqtSignal(str)
+class ImageLoaderWorker(QRunnable):
+    """Download, retry, and decode poster images outside the GUI thread."""
 
     def __init__(self, url: str, target_size=None, parent=None):
-        super().__init__(parent)
+        super().__init__()
         self.url = url
         self.target_size = target_size
+        self.signals = _ImageSignals()
+        self.setAutoDelete(True)
+
     def run(self):
+        try:
+            self._load()
+        finally:
+            self.signals.finished.emit(self)
+
+    def _load(self):
         width = self.target_size.width() if self.target_size else 0
         height = self.target_size.height() if self.target_size else 0
-        cache_key = (self.url, width, height)
+        url = self._normalise_url(self.url)
+        cache_key = (url, width, height)
         try:
-            if not self.url:
-                self.image_failed.emit(self.url)
+            if not url:
+                self.signals.image_failed.emit(self.url)
                 return
 
             with _IMAGE_CACHE_LOCK:
                 cached_image = _IMAGE_CACHE.get(cache_key)
+                if cached_image is not None:
+                    _IMAGE_CACHE.move_to_end(cache_key)
             if cached_image is not None:
-                self.image_loaded.emit(self.url, cached_image)
+                self.signals.image_loaded.emit(self.url, cached_image)
                 return
 
-            try:
-                from curl_cffi import requests as image_requests
-                response = image_requests.get(
-                    self.url,
-                    impersonate="chrome120",
-                    headers={"Accept": "image/jpeg,image/png,image/*,*/*;q=0.8"},
-                    timeout=15,
-                )
-            except ImportError:
-                import requests as image_requests
-                response = image_requests.get(
-                    self.url,
-                    headers={
-                        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36",
-                        "Accept": "image/jpeg,image/png,image/*,*/*;q=0.8",
-                    },
-                    timeout=15,
-                )
-            if response.status_code != 200 or len(response.content) > 15 * 1024 * 1024:
-                self.image_failed.emit(self.url)
+            response = self._download(url)
+            if response is None or response.status_code != 200 or len(response.content) > 15 * 1024 * 1024:
+                self.signals.image_failed.emit(self.url)
                 return
 
             image = QImage()
             if not response.content or not image.loadFromData(response.content):
-                self.image_failed.emit(self.url)
+                self.signals.image_failed.emit(self.url)
                 return
             if width > 0 and height > 0:
                 image = image.scaled(QSize(width, height), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                left = max(0, (image.width() - width) // 2)
+                top = max(0, (image.height() - height) // 2)
+                image = image.copy(left, top, width, height)
             with _IMAGE_CACHE_LOCK:
-                _IMAGE_CACHE[(self.url, width, height)] = image
-            self.image_loaded.emit(self.url, image)
+                _IMAGE_CACHE[cache_key] = image
+                _IMAGE_CACHE.move_to_end(cache_key)
+                while len(_IMAGE_CACHE) > _IMAGE_CACHE_LIMIT:
+                    _IMAGE_CACHE.popitem(last=False)
+            self.signals.image_loaded.emit(self.url, image)
         except Exception:
-            self.image_failed.emit(self.url)
+            self.signals.image_failed.emit(self.url)
+
+    @staticmethod
+    def _normalise_url(url):
+        url = (url or "").strip()
+        if url.startswith("//"):
+            return "https:" + url
+        parts = urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.netloc:
+            return ""
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, ""))
+
+    @staticmethod
+    def _download(url):
+        parts = urlsplit(url)
+        headers = {
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            "Referer": f"{parts.scheme}://{parts.netloc}/",
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36",
+        }
+        try:
+            from curl_cffi import requests as image_requests
+            request_options = {"impersonate": "chrome120"}
+        except ImportError:
+            import requests as image_requests
+            request_options = {}
+
+        for attempt in range(2):
+            try:
+                response = image_requests.get(url, headers=headers, timeout=10, **request_options)
+                if response.status_code == 200 or response.status_code < 500:
+                    return response
+            except Exception:
+                if attempt == 1:
+                    return None
+            if attempt == 0:
+                time.sleep(0.25)
+        return None
 
 
 
@@ -148,9 +214,12 @@ class SearchWorker(QThread):
                             "cover": getattr(r, "cover", None),
                             "year": getattr(r, "year", None),
                             "playable": getattr(r, "playable", None),
+                            "source": self.source_name or "",
                         })
                     elif isinstance(r, dict):
-                        formatted_results.append(r)
+                        result = dict(r)
+                        result.setdefault("source", self.source_name or "")
+                        formatted_results.append(result)
             
             if not formatted_results and searcher.last_error:
                 self.error_occurred.emit(searcher.last_error)
@@ -158,6 +227,18 @@ class SearchWorker(QThread):
             self.results_ready.emit(formatted_results)
         except Exception as e:
             self.error_occurred.emit(str(e))
+
+
+class RecommendationsWorker(QThread):
+    recommendations_ready = pyqtSignal(list)
+
+    def __init__(self, sort="TRENDING_DESC", force_refresh=False):
+        super().__init__()
+        self.sort = sort
+        self.force_refresh = force_refresh
+
+    def run(self):
+        self.recommendations_ready.emit(get_recommendations(self.sort, 12, self.force_refresh))
 
 
 class DetailsWorker(QThread):
@@ -171,11 +252,13 @@ class DetailsWorker(QThread):
 
     def run(self):
         try:
-            details = get_details(self.slug, self.source_name)
+            client = Scraper(self.source_name)
+            details = serialize_details(client.get_details(self.slug))
             if details:
+                details["provider"] = self.source_name or ""
                 self.details_ready.emit(details)
             else:
-                self.error_occurred.emit("Anime detayları alınamadı veya kaynak yanıt vermedi.")
+                self.error_occurred.emit(client.last_error or "Anime detayları alınamadı. Bağlantıyı kontrol edip yeniden deneyin.")
         except Exception as e:
             self.error_occurred.emit(str(e))
 
@@ -192,12 +275,22 @@ class StreamsWorker(QThread):
 
     def run(self):
         try:
-            stream_data = get_streams(self.anime_id, self.episode_id, self.source_name)
-            if stream_data and "data" in stream_data and "links" in stream_data["data"]:
-                links = stream_data["data"]["links"]
+            client = Scraper(self.source_name)
+            streams = client.get_streams(self.anime_id, self.episode_id)
+            if streams:
+                links = [
+                    {
+                        "url": stream.url,
+                        "quality": stream.quality,
+                        "server": stream.server,
+                        "headers": dict(stream.headers or {}),
+                        "subtitles": stream.subtitles,
+                    }
+                    for stream in streams
+                ]
                 self.streams_ready.emit(links)
             else:
-                self.error_occurred.emit("Yayın bağlantısı bulunamadı.")
+                self.error_occurred.emit(client.last_error or "Yayın bağlantısı bulunamadı. Başka bir kaynak deneyin.")
         except Exception as e:
             self.error_occurred.emit(str(e))
 

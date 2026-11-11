@@ -1,18 +1,17 @@
 """Search View for AnimLoid GUI."""
 
-import os
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, 
     QComboBox, QLabel, QScrollArea, QGridLayout, QFrame, 
-    QGraphicsDropShadowEffect, QSizePolicy, QProgressBar
+    QProgressBar
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QSize, QThreadPool, QTimer
-from PyQt5.QtGui import QPixmap, QColor, QFont, QCursor
+from PyQt5.QtCore import Qt, pyqtSignal, QThreadPool, QTimer
+from PyQt5.QtGui import QPixmap, QCursor
 
 from weeb_cli.config import config
 from weeb_cli.services.scraper import scraper
 from weeb_cli.services.progress import progress_tracker
-from weeb_cli.gui.workers import SearchWorker, ImageLoaderWorker, start_background_worker
+from weeb_cli.gui.workers import SearchWorker, ImageLoaderWorker, start_background_worker, start_image_worker
 
 
 class AnimeCard(QFrame):
@@ -36,7 +35,6 @@ class AnimeCard(QFrame):
         self.poster_label.setAlignment(Qt.AlignCenter)
         self.poster_label.setStyleSheet("background-color: #17191d; border-radius: 6px; color: #737780;")
         self.poster_label.setText("Yükleniyor...")
-        self.poster_label.setScaledContents(True)
         layout.addWidget(self.poster_label)
 
         # Title Label
@@ -74,9 +72,9 @@ class AnimeCard(QFrame):
         cover_url = anime_data.get("cover")
         if cover_url:
             self._image_worker = ImageLoaderWorker(cover_url, self.poster_label.size(), parent=self)
-            self._image_worker.image_loaded.connect(self._on_image_loaded, Qt.QueuedConnection)
-            self._image_worker.image_failed.connect(self._on_image_failed, Qt.QueuedConnection)
-            start_background_worker(self, self._image_worker)
+            self._image_worker.signals.image_loaded.connect(self._on_image_loaded, Qt.QueuedConnection)
+            self._image_worker.signals.image_failed.connect(self._on_image_failed, Qt.QueuedConnection)
+            start_image_worker(self._image_worker)
         else:
             self.poster_label.setText("Afiş Yok")
 
@@ -224,6 +222,11 @@ class SearchView(QWidget):
 
     def _search_recent(self, query):
         self.search_input.setText(query)
+        self.start_search()
+
+    def search_title(self, title):
+        """Open this title in the currently selected provider's search."""
+        self.search_input.setText(title or "")
         self.start_search()
 
     def _on_source_changed(self):

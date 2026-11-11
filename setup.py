@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="animloid",
-    version="2.7.3",
+    version="2.7.4",
     license="GPL-3.0-only",
     packages=find_packages(include=["weeb_cli", "weeb_cli.*"]),
     package_data={"weeb_cli": ["locales/*.json", "templates/*.html"]},
